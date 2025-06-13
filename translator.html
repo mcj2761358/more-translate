@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Translator Button</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+        }
+        
+        .translator-button {
+            width: 110px;
+            height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 18px;
+            color: white;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .translator-button:hover {
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+            background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%);
+        }
+        
+        .translator-button:active {
+            transform: translateY(0) scale(1.02);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .translator-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            transition: left 0.6s;
+        }
+        
+        .translator-button:hover::before {
+            left: 100%;
+        }
+        
+        .button-icon {
+            margin-right: 6px;
+            font-size: 16px;
+            filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+        }
+        
+        .loading {
+            background: linear-gradient(135deg, #6b7280 0%, #9ca3af 100%);
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        
+        .loading .button-icon {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .translation-popup {
+            position: absolute;
+            top: 45px;
+            left: 0;
+            width: 280px;
+            max-height: 180px;
+            background: rgba(0, 0, 0, 0.92);
+            color: white;
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 13px;
+            line-height: 1.5;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+            display: none;
+            overflow-y: auto;
+            z-index: 9999;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        .translation-popup.show {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        @keyframes slideIn {
+            from { 
+                opacity: 0; 
+                transform: translateY(-15px) scale(0.95); 
+            }
+            to { 
+                opacity: 1; 
+                transform: translateY(0) scale(1); 
+            }
+        }
+        
+        .close-btn {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            background: none;
+            border: none;
+            color: #9ca3af;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+        
+        .close-btn:hover {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .translation-content {
+            margin-right: 20px;
+        }
+        
+        .original-text {
+            color: #d1d5db;
+            font-size: 12px;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .translated-text {
+            color: #ffffff;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        .error-message {
+            color: #fca5a5;
+            font-style: italic;
+        }
+        
+        /* 自定义滚动条 */
+        .translation-popup::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        .translation-popup::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+        }
+        
+        .translation-popup::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+        }
+        
+        .translation-popup::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <button class="translator-button" id="translateBtn">
+        <span class="button-icon">🌐</span>
+        <span class="button-text">翻译</span>
+    </button>
+    
+    <div class="translation-popup" id="translationPopup">
+        <button class="close-btn" onclick="closeTranslation()">×</button>
+        <div class="translation-content" id="translationContent"></div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        
+        const translateBtn = document.getElementById('translateBtn');
+        const translationPopup = document.getElementById('translationPopup');
+        const translationContent = document.getElementById('translationContent');
+        
+        translateBtn.addEventListener('click', async () => {
+            console.log('=== 翻译按钮被点击 ===');
+            console.log('按钮元素:', translateBtn);
+            console.log('翻译弹窗元素:', translationPopup);
+            
+            try {
+                // 获取选中的文本
+                console.log('正在获取选中的文本...');
+                const selectedText = await ipcRenderer.invoke('get-selected-text');
+                console.log('选中的文本:', selectedText);
+                
+                if (!selectedText || selectedText.trim().length === 0) {
+                    console.log('没有检测到选中的文本');
+                    showTranslation('', '没有检测到选中的文本', true);
+                    return;
+                }
+                
+                // 显示加载状态
+                console.log('设置加载状态...');
+                translateBtn.classList.add('loading');
+                const buttonIcon = translateBtn.querySelector('.button-icon');
+                const buttonText = translateBtn.querySelector('.button-text');
+                buttonIcon.textContent = '⟳';
+                buttonText.textContent = '翻译中';
+                console.log('加载状态已设置');
+                
+                // 调用翻译
+                console.log('开始翻译文本:', selectedText.trim());
+                const translation = await ipcRenderer.invoke('translate-text', selectedText.trim());
+                console.log('翻译结果:', translation);
+                
+                // 显示翻译结果
+                console.log('准备显示翻译结果...');
+                showTranslation(selectedText.trim(), translation, false);
+                
+            } catch (error) {
+                console.error('翻译过程中发生错误:', error);
+                showTranslation('', '翻译失败，请稍后重试', true);
+            } finally {
+                // 恢复按钮状态
+                console.log('恢复按钮状态...');
+                translateBtn.classList.remove('loading');
+                const buttonIcon = translateBtn.querySelector('.button-icon');
+                const buttonText = translateBtn.querySelector('.button-text');
+                buttonIcon.textContent = '🌐';
+                buttonText.textContent = '翻译';
+                console.log('按钮状态已恢复');
+            }
+        });
+        
+        function showTranslation(originalText, translatedText, isError = false) {
+            console.log('=== 显示翻译结果 ===');
+            console.log('参数:', { originalText, translatedText, isError });
+            console.log('翻译弹窗元素:', translationPopup);
+            console.log('翻译内容元素:', translationContent);
+            
+            let content = '';
+            
+            if (originalText) {
+                content += `<div class="original-text">原文: ${originalText}</div>`;
+            }
+            
+            content += `<div class="translated-text ${isError ? 'error-message' : ''}">
+                ${isError ? '❌ ' : ''}${translatedText}
+            </div>`;
+            
+            console.log('生成的HTML内容:', content);
+            
+            translationContent.innerHTML = content;
+            console.log('内容已设置到DOM');
+            
+            // 强制显示翻译框
+            console.log('强制显示翻译框...');
+            translationPopup.style.display = 'block';
+            translationPopup.style.visibility = 'visible';
+            translationPopup.style.opacity = '1';
+            translationPopup.style.zIndex = '9999';
+            
+            // 移除可能影响显示的类
+            translationPopup.classList.remove('hide');
+            translationPopup.classList.add('show');
+            
+            console.log('翻译框样式已设置');
+            console.log('翻译框当前状态:', {
+                display: translationPopup.style.display,
+                visibility: translationPopup.style.visibility,
+                opacity: translationPopup.style.opacity,
+                zIndex: translationPopup.style.zIndex,
+                className: translationPopup.className,
+                offsetHeight: translationPopup.offsetHeight,
+                offsetWidth: translationPopup.offsetWidth,
+                getBoundingClientRect: translationPopup.getBoundingClientRect()
+            });
+            
+            // 强制重绘
+            translationPopup.offsetHeight;
+            console.log('强制重绘完成');
+            
+            // 确保窗口在最前面
+            ipcRenderer.invoke('bring-to-front');
+            
+            console.log('翻译框应该已显示');
+            
+            // 自动关闭翻译结果
+            setTimeout(() => {
+                console.log('自动关闭翻译结果');
+                closeTranslation();
+            }, 10000); // 增加到10秒
+        }
+        
+        function closeTranslation() {
+            console.log('=== 关闭翻译结果 ===');
+            console.log('移除show类...');
+            translationPopup.classList.remove('show');
+            console.log('延迟隐藏...');
+            // 延迟隐藏，确保动画完成
+            setTimeout(() => {
+                translationPopup.style.display = 'none';
+                console.log('翻译框已隐藏');
+            }, 400);
+        }
+        
+        // 点击其他地方关闭翻译窗口
+        document.addEventListener('click', (e) => {
+            if (!translationPopup.contains(e.target) && e.target !== translateBtn) {
+                closeTranslation();
+            }
+        });
+        
+        // 监听ESC键关闭
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                ipcRenderer.invoke('hide-translator');
+            }
+        });
+        
+        // 防止窗口被拖拽
+        document.addEventListener('dragstart', (e) => {
+            e.preventDefault();
+        });
+        
+        // 防止右键菜单
+        document.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+    </script>
+</body>
+</html>
+

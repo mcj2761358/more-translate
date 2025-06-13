@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>More Translator - 调试模式</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #007AFF;
+            background: #f0f8ff;
+        }
+        .error {
+            border-left-color: #FF3B30;
+            background: #fff5f5;
+        }
+        .success {
+            border-left-color: #34C759;
+            background: #f0fff4;
+        }
+        .warning {
+            border-left-color: #FF9500;
+            background: #fffbf0;
+        }
+        .log-area {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+        button {
+            background: #007AFF;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056CC;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌐 More Translator - 调试模式</h1>
+        
+        <div class="status" id="appStatus">
+            <h3>应用状态</h3>
+            <p>正在检查应用状态...</p>
+        </div>
+        
+        <div class="test-section">
+            <h3>功能测试</h3>
+            <button onclick="testTranslation()">测试翻译功能</button>
+            <button onclick="testClipboard()">测试剪贴板</button>
+            <button onclick="checkPermission()">检查权限</button>
+            <button onclick="showLogs()">查看日志</button>
+        </div>
+        
+        <div class="test-section">
+            <h3>翻译测试</h3>
+            <input type="text" id="testText" placeholder="输入要翻译的英文文本" style="width: 300px; padding: 8px; margin-right: 10px;">
+            <button onclick="translateTest()">翻译</button>
+            <div id="translationResult" style="margin-top: 10px; padding: 10px; background: #f9f9f9; border-radius: 5px; display: none;"></div>
+        </div>
+        
+        <div class="log-area" id="logArea" style="display: none;">
+            <div>日志内容将在这里显示...</div>
+        </div>
+        
+        <div class="status warning">
+            <h3>使用说明</h3>
+            <p>1. 确保已授予辅助功能权限</p>
+            <p>2. 选择英文文本后按 CMD+Shift+T</p>
+            <p>3. 点击出现的翻译按钮</p>
+            <p>4. 查看翻译结果</p>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        
+        // 页面加载完成后检查状态
+        window.addEventListener('DOMContentLoaded', async () => {
+            updateStatus('应用已启动，正在检查状态...');
+            
+            try {
+                // 检查权限
+                const hasPermission = await ipcRenderer.invoke('check-permission');
+                if (hasPermission) {
+                    updateStatus('✅ 辅助功能权限已授予', 'success');
+                } else {
+                    updateStatus('❌ 需要辅助功能权限', 'error');
+                }
+            } catch (error) {
+                updateStatus('❌ 检查权限失败: ' + error.message, 'error');
+            }
+        });
+        
+        function updateStatus(message, type = 'status') {
+            const statusDiv = document.getElementById('appStatus');
+            statusDiv.className = 'status ' + type;
+            statusDiv.innerHTML = '<h3>应用状态</h3><p>' + message + '</p>';
+        }
+        
+        async function testTranslation() {
+            try {
+                updateStatus('正在测试翻译功能...', 'warning');
+                const result = await ipcRenderer.invoke('translate-text', 'hello world');
+                updateStatus('✅ 翻译功能正常: ' + result, 'success');
+            } catch (error) {
+                updateStatus('❌ 翻译功能测试失败: ' + error.message, 'error');
+            }
+        }
+        
+        async function testClipboard() {
+            try {
+                const text = await ipcRenderer.invoke('get-selected-text');
+                updateStatus('✅ 剪贴板功能正常，当前内容: ' + (text || '空'), 'success');
+            } catch (error) {
+                updateStatus('❌ 剪贴板功能测试失败: ' + error.message, 'error');
+            }
+        }
+        
+        async function checkPermission() {
+            try {
+                const hasPermission = await ipcRenderer.invoke('check-permission');
+                if (hasPermission) {
+                    updateStatus('✅ 辅助功能权限已授予', 'success');
+                } else {
+                    updateStatus('❌ 需要辅助功能权限', 'error');
+                }
+            } catch (error) {
+                updateStatus('❌ 权限检查失败: ' + error.message, 'error');
+            }
+        }
+        
+        async function showLogs() {
+            const logArea = document.getElementById('logArea');
+            logArea.style.display = logArea.style.display === 'none' ? 'block' : 'none';
+            
+            if (logArea.style.display === 'block') {
+                // 这里可以添加读取日志文件的逻辑
+                logArea.innerHTML = '<div>日志文件位置: ~/Library/Application Support/More Translator/app.log</div>';
+            }
+        }
+        
+        async function translateTest() {
+            const text = document.getElementById('testText').value;
+            const resultDiv = document.getElementById('translationResult');
+            
+            if (!text) {
+                alert('请输入要翻译的文本');
+                return;
+            }
+            
+            try {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = '正在翻译...';
+                
+                const result = await ipcRenderer.invoke('translate-text', text);
+                resultDiv.innerHTML = '<strong>原文:</strong> ' + text + '<br><strong>译文:</strong> ' + result;
+            } catch (error) {
+                resultDiv.innerHTML = '<strong>翻译失败:</strong> ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>
+
