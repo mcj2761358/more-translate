@@ -82,6 +82,8 @@
             <button onclick="testClipboard()">测试剪贴板</button>
             <button onclick="checkPermission()">检查权限</button>
             <button onclick="showLogs()">查看日志</button>
+            <button onclick="showDragLogs()">查看拖动日志</button>
+            <button onclick="clearLogs()">清空日志</button>
         </div>
         
         <div class="test-section">
@@ -93,6 +95,10 @@
         
         <div class="log-area" id="logArea" style="display: none;">
             <div>日志内容将在这里显示...</div>
+        </div>
+        
+        <div class="log-area" id="dragLogArea" style="display: none;">
+            <div id="dragLogContent">拖动日志将在这里显示...</div>
         </div>
         
         <div class="status warning">
@@ -191,6 +197,54 @@
                 resultDiv.innerHTML = '<strong>翻译失败:</strong> ' + error.message;
             }
         }
+        
+        async function showDragLogs() {
+            const dragLogArea = document.getElementById('dragLogArea');
+            const dragLogContent = document.getElementById('dragLogContent');
+            
+            if (dragLogArea.style.display === 'none') {
+                try {
+                    const logs = await ipcRenderer.invoke('get-drag-logs');
+                    dragLogContent.innerHTML = logs.length > 0 ? logs.join('<br>') : '暂无拖动日志';
+                    dragLogArea.style.display = 'block';
+                } catch (error) {
+                    dragLogContent.innerHTML = '获取拖动日志失败: ' + error.message;
+                    dragLogArea.style.display = 'block';
+                }
+            } else {
+                dragLogArea.style.display = 'none';
+            }
+        }
+        
+        async function clearLogs() {
+            try {
+                await ipcRenderer.invoke('clear-drag-logs');
+                const dragLogContent = document.getElementById('dragLogContent');
+                dragLogContent.innerHTML = '拖动日志已清空';
+                updateStatus('✅ 日志已清空', 'success');
+            } catch (error) {
+                updateStatus('❌ 清空日志失败: ' + error.message, 'error');
+            }
+        }
+        
+        // 监听拖动日志更新
+        ipcRenderer.on('drag-log-update', (event, logMessage) => {
+            const dragLogContent = document.getElementById('dragLogContent');
+            const dragLogArea = document.getElementById('dragLogArea');
+            
+            if (dragLogArea.style.display !== 'none') {
+                // 如果日志区域正在显示，实时更新
+                const currentContent = dragLogContent.innerHTML;
+                if (currentContent === '暂无拖动日志' || currentContent === '拖动日志已清空') {
+                    dragLogContent.innerHTML = logMessage;
+                } else {
+                    dragLogContent.innerHTML = currentContent + '<br>' + logMessage;
+                }
+                
+                // 自动滚动到底部
+                dragLogContent.scrollTop = dragLogContent.scrollHeight;
+            }
+        });
     </script>
 </body>
 </html>

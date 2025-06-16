@@ -17,6 +17,31 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            padding: 8px; /* 增加内边距，便于拖动 */
+            cursor: move; /* 显示拖动光标 */
+            user-select: none; /* 防止选中文本 */
+        }
+        
+        .drag-handle {
+            position: absolute;
+            left: -8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 6px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+            cursor: move;
+            opacity: 0.6;
+            transition: opacity 0.2s ease;
+        }
+        
+        .translator-container:hover .drag-handle {
+            opacity: 1;
+        }
+        
+        .translator-container.dragging {
+            cursor: grabbing;
         }
         
         .translator-button {
@@ -228,10 +253,108 @@
         .translation-popup::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.5);
         }
+        
+        /* 确认对话框样式 */
+        .confirm-dialog {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 99999;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .confirm-dialog.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .confirm-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            width: 350px;
+            max-width: 90vw;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            transform: scale(0.8);
+            transition: transform 0.3s ease;
+            position: relative;
+        }
+        
+        .confirm-dialog.show .confirm-content {
+            transform: scale(1);
+        }
+        
+        .confirm-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .confirm-message {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 30px;
+            text-align: center;
+            line-height: 1.6;
+        }
+        
+        .confirm-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        
+        .confirm-btn {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 100px;
+            height: 44px;
+        }
+        
+        .cancel-btn {
+            background: #f5f5f5;
+            color: #666;
+        }
+        
+        .cancel-btn:hover {
+            background: #e0e0e0;
+            color: #333;
+        }
+        
+        .confirm-btn-primary {
+            background: #ff4757;
+            color: white;
+        }
+        
+        .confirm-btn-primary:hover {
+            background: #ff3742;
+            transform: translateY(-1px);
+        }
+        
+        .confirm-btn:active {
+            transform: translateY(0);
+        }
     </style>
 </head>
 <body>
     <div class="translator-container">
+        <div class="drag-handle" title="拖动翻译按钮"></div>
         <button class="translator-button" id="translateBtn">
             <span class="button-icon">🌐</span>
             <span class="button-text">翻译</span>
@@ -251,18 +374,21 @@
         const closeBtn = document.getElementById('closeBtn');
         const translationPopup = document.getElementById('translationPopup');
         const translationContent = document.getElementById('translationContent');
+        const translatorContainer = document.querySelector('.translator-container');
         
         let autoHideTimer = null;
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
         
-        // 翻译按钮点击事件
-        translateBtn.addEventListener('click', async () => {
-            console.log('=== 翻译按钮被点击 ===');
+        // 翻译处理函数
+        async function handleTranslateClick() {
+            console.log('=== 处理翻译请求 ===');
             
             try {
-                // 获取选中的文本
-                console.log('正在获取选中的文本...');
-                const selectedText = await ipcRenderer.invoke('get-selected-text');
-                console.log('选中的文本:', selectedText);
+                // 先复制选中文本到剪贴板，然后获取
+                console.log('正在复制并获取选中的文本...');
+                const selectedText = await ipcRenderer.invoke('copy-and-get-selected-text');
+                console.log('获取到的文本:', selectedText);
                 
                 if (!selectedText || selectedText.trim().length === 0) {
                     console.log('没有检测到选中的文本');
@@ -301,18 +427,92 @@
                 buttonText.textContent = '翻译';
                 console.log('按钮状态已恢复');
             }
+        }
+
+        // 翻译按钮点击事件
+        translateBtn.addEventListener('click', async (e) => {
+            console.log('=== 翻译按钮被点击 ===');
+            
+            // 如果正在拖动，则不处理点击事件
+            if (isDragging) {
+                console.log('正在拖动，忽略点击事件');
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            
+            e.stopPropagation(); // 阻止事件冒泡
+            await handleTranslateClick();
         });
         
         // 关闭按钮点击事件
-        closeBtn.addEventListener('click', () => {
+        closeBtn.addEventListener('click', (e) => {
             console.log('=== 关闭按钮被点击 ===');
+            
+            // 如果正在拖动，则不处理点击事件
+            if (isDragging) {
+                console.log('正在拖动，忽略关闭点击事件');
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            
+            e.stopPropagation(); // 阻止事件冒泡
             hideTranslator();
         });
         
         function hideTranslator() {
             console.log('=== 隐藏翻译窗口 ===');
-            // 通知主进程隐藏翻译窗口
-            ipcRenderer.invoke('hide-translator');
+            
+            // 显示确认对话框
+            showConfirmDialog();
+        }
+        
+        function showConfirmDialog() {
+            console.log('=== 显示确认对话框 ===');
+            
+            // 先通知主进程调整窗口大小
+            ipcRenderer.invoke('resize-translator-for-dialog');
+            
+            // 创建确认对话框
+            const confirmDialog = document.createElement('div');
+            confirmDialog.className = 'confirm-dialog';
+            confirmDialog.innerHTML = `
+                <div class="confirm-content">
+                    <div class="confirm-title">确认退出</div>
+                    <div class="confirm-message">确定要退出翻译工具吗？</div>
+                    <div class="confirm-buttons">
+                        <button class="confirm-btn cancel-btn" onclick="hideConfirmDialog()">取消</button>
+                        <button class="confirm-btn confirm-btn-primary" onclick="confirmExit()">确定</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(confirmDialog);
+            
+            // 显示对话框
+            setTimeout(() => {
+                confirmDialog.classList.add('show');
+            }, 10);
+        }
+        
+        function hideConfirmDialog() {
+            console.log('=== 隐藏确认对话框 ===');
+            const confirmDialog = document.querySelector('.confirm-dialog');
+            if (confirmDialog) {
+                confirmDialog.classList.remove('show');
+                setTimeout(() => {
+                    confirmDialog.remove();
+                    // 恢复窗口大小
+                    ipcRenderer.invoke('restore-translator-size');
+                }, 300);
+            }
+        }
+        
+        function confirmExit() {
+            console.log('=== 确认退出应用 ===');
+            // 通知主进程退出整个应用
+            ipcRenderer.invoke('quit-app');
         }
         
         function showTranslation(originalText, translatedText, isError = false) {
@@ -429,6 +629,133 @@
                 console.error('获取翻译状态失败:', error);
             }
         });
+        
+        // 发送拖动日志到主进程
+        function sendDragLog(message) {
+            console.log(`[DRAG] ${message}`);
+            // 这里我们通过IPC发送日志，但由于translator.html没有直接的IPC通道到主窗口
+            // 我们先在控制台输出，主要的日志记录在主进程中
+        }
+        
+        // 拖动功能实现
+        function initDragFunctionality() {
+            sendDragLog('初始化拖动功能');
+            console.log('=== 初始化拖动功能 ===');
+            console.log('translatorContainer:', translatorContainer);
+            
+            let dragStartTime = 0;
+            let dragStartPosition = { x: 0, y: 0 };
+            let hasMoved = false;
+            
+            // 鼠标按下事件 - 在整个容器上监听
+            translatorContainer.addEventListener('mousedown', (e) => {
+                sendDragLog(`mousedown 事件触发: target=${e.target.tagName}, className=${e.target.className}`);
+                console.log('mousedown 事件触发', e.target, e.target.tagName);
+                
+                // 记录拖动开始时间和位置
+                dragStartTime = Date.now();
+                dragStartPosition.x = e.screenX;
+                dragStartPosition.y = e.screenY;
+                hasMoved = false;
+                
+                sendDragLog(`准备拖动: screenX=${e.screenX}, screenY=${e.screenY}`);
+                console.log('准备拖动');
+                isDragging = true;
+                translatorContainer.classList.add('dragging');
+                
+                // 记录鼠标相对于屏幕的位置
+                dragOffset.x = e.screenX;
+                dragOffset.y = e.screenY;
+                
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            
+            // 鼠标移动事件
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                
+                // 检查是否真的移动了（避免微小的鼠标抖动）
+                const moveDistance = Math.sqrt(
+                    Math.pow(e.screenX - dragStartPosition.x, 2) + 
+                    Math.pow(e.screenY - dragStartPosition.y, 2)
+                );
+                
+                if (moveDistance > 5) { // 移动超过5像素才认为是拖动
+                    hasMoved = true;
+                }
+                
+                sendDragLog(`拖动中: screenX=${e.screenX}, screenY=${e.screenY}, moveDistance=${moveDistance}`);
+                console.log('拖动中...', e.screenX, e.screenY, 'moveDistance:', moveDistance);
+                
+                // 计算新位置（使用屏幕坐标）
+                const deltaX = e.screenX - dragOffset.x;
+                const deltaY = e.screenY - dragOffset.y;
+                
+                sendDragLog(`移动距离: deltaX=${deltaX}, deltaY=${deltaY}`);
+                console.log('移动距离:', deltaX, deltaY);
+                
+                // 通知主进程移动窗口
+                ipcRenderer.invoke('move-translator-window', deltaX, deltaY);
+                
+                // 更新偏移
+                dragOffset.x = e.screenX;
+                dragOffset.y = e.screenY;
+            });
+            
+            // 鼠标释放事件
+            document.addEventListener('mouseup', (e) => {
+                if (isDragging) {
+                    sendDragLog(`结束拖动, hasMoved=${hasMoved}`);
+                    console.log('结束拖动, hasMoved:', hasMoved);
+                    
+                    // 只有在没有移动的情况下才触发点击事件
+                    if (!hasMoved) {
+                        // 检查点击的是哪个按钮
+                        if (e.target === translateBtn || e.target.closest('#translateBtn')) {
+                            sendDragLog('检测到点击翻译按钮（无拖动）');
+                            console.log('检测到点击翻译按钮（无拖动）');
+                            // 延迟一点触发点击，确保拖动状态已清除
+                            setTimeout(() => {
+                                // 手动触发翻译功能，而不是click事件
+                                handleTranslateClick();
+                            }, 10);
+                        } else if (e.target === closeBtn || e.target.closest('#closeBtn')) {
+                            sendDragLog('检测到点击关闭按钮（无拖动）');
+                            console.log('检测到点击关闭按钮（无拖动）');
+                            setTimeout(() => {
+                                hideTranslator();
+                            }, 10);
+                        }
+                    } else {
+                        sendDragLog('拖动后释放，不触发点击事件');
+                        console.log('拖动后释放，不触发点击事件');
+                    }
+                    
+                    isDragging = false;
+                    translatorContainer.classList.remove('dragging');
+                    hasMoved = false;
+                }
+            });
+            
+            // 防止拖拽时选中文本
+            document.addEventListener('selectstart', (e) => {
+                if (isDragging) {
+                    e.preventDefault();
+                }
+            });
+            
+            // 添加测试事件
+            translatorContainer.addEventListener('click', (e) => {
+                sendDragLog(`容器被点击: target=${e.target.tagName}`);
+                console.log('容器被点击', e.target);
+            });
+            
+            sendDragLog('拖动功能初始化完成');
+        }
+        
+        // 初始化拖动功能
+        initDragFunctionality();
     </script>
 </body>
 </html>
