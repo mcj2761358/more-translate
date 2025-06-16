@@ -4,7 +4,7 @@
 
 ## 功能特性
 
-- 🌐 支持多种翻译服务（Google、有道、DeepL Free、微软、Amazon、腾讯）
+- 🌐 支持多种翻译服务（Google、有道、百度、DeepL Free、微软、Amazon、腾讯）
 - 🔄 **同时调用多个免费翻译服务，对比显示结果**
 - ⌨️ 全局快捷键 `CMD+Shift+T` 快速翻译
 - 🎯 智能文本检测，自动识别英文文本
@@ -25,7 +25,17 @@
 - 无需配置 API 密钥
 - 自动作为免费翻译服务之一
 
-#### 3. DeepL API Free（免费额度）
+#### 3. 百度翻译（免费额度）
+1. 访问 [百度AI开放平台](https://console.bce.baidu.com/ai/)
+2. 注册账户并创建机器翻译应用（每月免费额度）
+3. 获取 API Key (AK) 和 Secret Key (SK)
+4. 设置环境变量：
+   ```bash
+   export BAIDU_AK="your_api_key"
+   export BAIDU_SK="your_secret_key"
+   ```
+
+#### 4. DeepL API Free（免费额度）
 1. 访问 [DeepL API](https://www.deepl.com/pro-api)
 2. 注册免费账户（每月50万字符免费额度）
 3. 获取 API 密钥

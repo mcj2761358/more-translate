@@ -13,8 +13,9 @@
 
 ### 免费服务（同时调用）
 1. **Google 翻译** - 无需配置，自动可用
-2. **有道翻译** - 无需配置，自动可用  
-3. **DeepL API Free** - 需要免费API密钥，每月50万字符免费额度
+2. **有道翻译** - 无需配置，自动可用
+3. **百度翻译** - 需要免费API密钥，每月200万字符免费额度
+4. **DeepL API Free** - 需要免费API密钥，每月50万字符免费额度
 
 ### 付费服务（可选配置）
 1. **微软翻译** - Azure Cognitive Services
@@ -22,6 +23,13 @@
 3. **腾讯翻译君** - 腾讯云翻译服务
 
 ## 配置方法
+
+### 百度翻译（推荐）
+```bash
+# 获取免费API密钥：https://fanyi-api.baidu.com/
+export BAIDU_TRANSLATE_APP_ID="your_app_id"
+export BAIDU_TRANSLATE_SECRET_KEY="your_secret_key"
+```
 
 ### DeepL API Free（推荐）
 ```bash

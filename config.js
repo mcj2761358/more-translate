@@ -3,9 +3,9 @@ module.exports = {
   // 免费翻译服务（同时调用显示）
   freeTranslationServices: [
     'google',      // Google 翻译（免费，无需密钥）
-    'youdao',      // 有道翻译（免费，无需密钥）
-    'deepl_free',   // DeepL API Free（需要免费API密钥）
-    'amazon'      // Amazon Translate（需要 AWS 凭证）
+    'amazon',      // 亚马逊翻译（免费，无需密钥）
+    'baidu',       // 百度翻译（免费额度，需要API密钥）
+    'deepl_free'   // DeepL API Free（需要免费API密钥）
   ],
   
   // 付费翻译服务（作为备用）
@@ -26,6 +26,10 @@ module.exports = {
   apiKeys: {
     microsoft: process.env.MICROSOFT_TRANSLATE_KEY || '',
     deepl: process.env.DEEPL_API_KEY || '',
+    baidu: {
+      ak: process.env.BAIDU_AK || '',
+      sk: process.env.BAIDU_SK || ''
+    },
     tencent: {
       secretId: process.env.TENCENT_SECRET_ID || '',
       secretKey: process.env.TENCENT_SECRET_KEY || '',

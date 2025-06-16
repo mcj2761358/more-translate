@@ -16,7 +16,22 @@ Hello world, this is a test for the translation feature.
 应该同时显示以下翻译服务的结果：
 - ✅ Google 翻译：翻译结果
 - ❌ 有道翻译：翻译失败（API限制）
+- ❌ 百度翻译：翻译失败（未配置API密钥）
 - ❌ DeepL Free：翻译失败（未配置API密钥）
+
+## 配置百度翻译API（推荐）
+
+如果要测试百度翻译，可以：
+
+1. 访问 https://fanyi-api.baidu.com/
+2. 注册账户并创建应用
+3. 获取 APP ID 和密钥
+4. 设置环境变量：
+   ```bash
+   export BAIDU_TRANSLATE_APP_ID="your_app_id"
+   export BAIDU_TRANSLATE_SECRET_KEY="your_secret_key"
+   ```
+5. 重启应用
 
 ## 配置DeepL API（可选）
 

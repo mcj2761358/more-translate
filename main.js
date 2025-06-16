@@ -695,6 +695,13 @@ async function translateText(text) {
         case 'youdao':
           result = await translateWithYoudao(text);
           break;
+        case 'baidu':
+          if (config.apiKeys.baidu.ak && config.apiKeys.baidu.sk) {
+            result = await translateWithBaidu(text);
+          } else {
+            throw new Error('Baidu API credentials not configured');
+          }
+          break;
         case 'deepl_free':
           if (config.apiKeys.deepl) {
             result = await translateWithDeepL(text);
@@ -781,6 +788,15 @@ async function translateTextFallback(text) {
         case 'youdao':
           console.log('调用有道翻译...');
           result = await translateWithYoudao(text);
+          break;
+        case 'baidu':
+          if (config.apiKeys.baidu.ak && config.apiKeys.baidu.sk) {
+            console.log('调用百度翻译...');
+            result = await translateWithBaidu(text);
+          } else {
+            console.log('Baidu API credentials not configured, skipping...');
+            continue;
+          }
           break;
         case 'deepl_free':
           if (config.apiKeys.deepl) {
@@ -950,6 +966,126 @@ async function translateWithYoudao(text) {
     console.error('有道翻译 - 请求失败:', error.message);
     throw error;
   }
+}
+
+// 百度翻译API（使用百度AI开放平台）
+async function translateWithBaidu(text) {
+  console.log('百度翻译 - 开始请求');
+  const axios = require('axios');
+  
+  try {
+    // 百度AI开放平台API参数
+    const AK = config.apiKeys.baidu.ak;
+    const SK = config.apiKeys.baidu.sk;
+    
+    console.log('百度翻译 - API 凭证:', AK ? '已配置' : '未配置');
+    
+    // 获取Access Token
+    const accessToken = await getBaiduAccessToken(AK, SK);
+    console.log('百度翻译 - Access Token获取成功');
+    
+    // 语言代码映射
+    const langMap = {
+      'en': 'en',
+      'zh': 'zh',
+      'zh-cn': 'zh',
+      'zh-tw': 'zh',
+      'ja': 'jp',
+      'ko': 'kor',
+      'fr': 'fra',
+      'de': 'de',
+      'es': 'spa',
+      'it': 'it',
+      'ru': 'ru',
+      'pt': 'pt',
+      'ar': 'ara'
+    };
+    
+    const from = langMap[config.translation.sourceLanguage] || 'en';
+    const to = langMap[config.translation.targetLanguage] || 'zh';
+    
+    // 调用翻译API
+    const options = {
+      method: 'POST',
+      url: `https://aip.baidubce.com/rpc/2.0/mt/texttrans/v1?access_token=${accessToken}`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      data: JSON.stringify({
+        from: from,
+        to: to,
+        q: text
+      }),
+      timeout: config.translation.timeout
+    };
+    
+    console.log('百度翻译 - 请求参数:', {
+      from: from,
+      to: to,
+      q: text.substring(0, 50) + (text.length > 50 ? '...' : '')
+    });
+    
+    const response = await axios(options);
+    
+    console.log('百度翻译 - 响应状态:', response.status);
+    console.log('百度翻译 - 响应数据:', response.data);
+    
+    if (response.data && response.data.result && response.data.result.trans_result && response.data.result.trans_result.length > 0) {
+      const result = response.data.result.trans_result[0].dst;
+      console.log('百度翻译 - 成功获取结果:', result);
+      return result;
+    }
+    
+    if (response.data && response.data.error_code) {
+      const errorMessages = {
+        '1': 'Unknown error',
+        '2': 'Service temporarily unavailable',
+        '3': 'Unsupported method',
+        '4': 'Request limit reached',
+        '6': 'Invalid client id',
+        '17': 'Open api daily request limit reached',
+        '18': 'Open api qps request limit reached',
+        '19': 'Open api total request limit reached',
+        '100': 'Invalid parameter',
+        '110': 'Access token invalid or no longer valid',
+        '111': 'Access token expired'
+      };
+      const errorMsg = errorMessages[response.data.error_code] || `Error code: ${response.data.error_code}`;
+      throw new Error(`Baidu AI API Error: ${errorMsg}`);
+    }
+    
+    console.log('百度翻译 - 响应格式无效');
+    throw new Error('Invalid Baidu AI response format');
+  } catch (error) {
+    console.error('百度翻译 - 请求失败:', error.message);
+    throw error;
+  }
+}
+
+// 获取百度AI开放平台Access Token
+async function getBaiduAccessToken(AK, SK) {
+  const axios = require('axios');
+  
+  const options = {
+    method: 'POST',
+    url: `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${AK}&client_secret=${SK}`,
+    timeout: 5000
+  };
+  
+  return new Promise((resolve, reject) => {
+    axios(options)
+      .then(res => {
+        if (res.data && res.data.access_token) {
+          resolve(res.data.access_token);
+        } else {
+          reject(new Error('Failed to get access token'));
+        }
+      })
+      .catch(error => {
+        reject(new Error(`Access token request failed: ${error.message}`));
+      });
+  });
 }
 
 // DeepL API Free 翻译
@@ -1344,6 +1480,7 @@ function getServiceDisplayName(service) {
   const serviceNames = {
     'google': 'Google 翻译',
     'youdao': '有道翻译',
+    'baidu': '百度翻译',
     'deepl_free': 'DeepL Free',
     'microsoft': '微软翻译',
     'amazon': 'Amazon Translate',
