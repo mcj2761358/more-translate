@@ -114,6 +114,33 @@
             100% { transform: rotate(360deg); }
         }
         
+        .settings-button {
+            width: 28px;
+            height: 28px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            color: #ffffff;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .settings-button:hover {
+            color: #ffc107;
+            background: rgba(255, 193, 7, 0.2);
+            border-color: rgba(255, 193, 7, 0.4);
+            transform: scale(1.1) rotate(90deg);
+        }
+        
+        .settings-button:active {
+            transform: scale(0.95) rotate(90deg);
+        }
+        
         .close-button {
             width: 28px;
             height: 28px;
@@ -440,6 +467,7 @@
             <span class="button-icon">🌐</span>
             <span class="button-text">翻译</span>
         </button>
+        <button class="settings-button" id="settingsBtn" title="设置">⚙️</button>
         <button class="close-button" id="closeBtn" title="关闭">✕</button>
     </div>
     
@@ -453,6 +481,7 @@
         const { ipcRenderer } = require('electron');
         
         const translateBtn = document.getElementById('translateBtn');
+        const settingsBtn = document.getElementById('settingsBtn');
         const closeBtn = document.getElementById('closeBtn');
         const translationPopup = document.getElementById('translationPopup');
         const translationContent = document.getElementById('translationContent');
@@ -551,6 +580,52 @@
             
             e.stopPropagation(); // 阻止事件冒泡
             await handleTranslateClick();
+        });
+        
+        // 设置按钮点击事件
+        let settingsClickStartTime = 0;
+        let settingsClickStartPosition = { x: 0, y: 0 };
+        
+        settingsBtn.addEventListener('mousedown', (e) => {
+            settingsClickStartTime = Date.now();
+            settingsClickStartPosition.x = e.screenX;
+            settingsClickStartPosition.y = e.screenY;
+        });
+        
+        settingsBtn.addEventListener('click', async (e) => {
+            console.log('=== 设置按钮被点击 ===');
+            
+            // 如果正在拖动，则不处理点击事件
+            if (isDragging || wasRecentlyDragged) {
+                console.log('正在拖动或刚刚拖动过，忽略设置点击事件');
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            
+            // 检查是否为真正的点击
+            const clickDuration = Date.now() - settingsClickStartTime;
+            const clickDistance = Math.sqrt(
+                Math.pow(e.screenX - settingsClickStartPosition.x, 2) + 
+                Math.pow(e.screenY - settingsClickStartPosition.y, 2)
+            );
+            
+            // 如果点击时间太长或移动距离太大，认为是拖动
+            if (clickDuration > 500 || clickDistance > 5) {
+                console.log('检测到拖动行为，忽略设置点击事件', { clickDuration, clickDistance });
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            
+            e.stopPropagation(); // 阻止事件冒泡
+            
+            try {
+                await ipcRenderer.invoke('open-settings');
+                console.log('设置窗口已打开');
+            } catch (error) {
+                console.error('打开设置窗口失败:', error);
+            }
         });
         
         // 关闭按钮点击事件 - 使用相同的拖动检测逻辑

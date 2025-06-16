@@ -52,7 +52,7 @@ module.exports = {
   
   // 快捷键设置
   shortcuts: {
-    translate: 'CommandOrControl+Shift+T'  // 翻译快捷键
+    translate: 'Shift+X'  // 翻译快捷键
   },
   
   // 窗口设置

@@ -90,9 +90,12 @@ function writeDragLog(message) {
 let mainWindow;
 let translatorWindow;
 let resultWindow; // 新增：翻译结果窗口
+let settingsWindow; // 新增：设置窗口
+let progressWindow; // 新增：进度提示窗口
 let lastClipboardText = ''; // 新增：记录上次剪贴板内容
 let isTranslating = false; // 新增：翻译状态标志
 let dragLogs = []; // 新增：拖动日志
+let currentShortcut = config.shortcuts.translate; // 当前快捷键
 
 function createMainWindow() {
   writeLog('=== 创建主窗口 ===');
@@ -168,7 +171,7 @@ function createTranslatorWindow() {
   
   // 创建翻译按钮窗口
   translatorWindow = new BrowserWindow({
-    width: 180, // 增加宽度以容纳更宽的按钮和关闭按钮
+    width: 220, // 增加宽度以容纳翻译按钮、设置按钮和关闭按钮
     height: 40,
     frame: false, // 无边框
     transparent: true, // 透明
@@ -263,6 +266,131 @@ function createResultWindow() {
   return resultWindow;
 }
 
+function createSettingsWindow() {
+  console.log('=== 创建设置窗口 ===');
+  
+  // 检查现有窗口是否有效，如果有效则显示
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.show();
+    settingsWindow.focus();
+    return settingsWindow;
+  }
+  
+  // 创建设置窗口
+  settingsWindow = new BrowserWindow({
+    width: 700,
+    height: 500,
+    minWidth: 600,
+    minHeight: 400,
+    frame: true,
+    transparent: false,
+    alwaysOnTop: false,
+    resizable: true,
+    movable: true,
+    minimizable: true,
+    maximizable: true,
+    show: false,
+    skipTaskbar: false,
+    focusable: true,
+    title: '翻译工具设置',
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+
+  console.log('设置窗口创建完成');
+  settingsWindow.loadFile('settings.html');
+  
+  // 监听窗口关闭事件
+  settingsWindow.on('closed', () => {
+    console.log('设置窗口已关闭');
+    settingsWindow = null;
+  });
+  
+  // 窗口准备显示时显示
+  settingsWindow.once('ready-to-show', () => {
+    settingsWindow.show();
+    settingsWindow.focus();
+  });
+  
+  return settingsWindow;
+}
+
+function createProgressWindow() {
+  console.log('=== 创建进度窗口 ===');
+  
+  // 如果进度窗口已存在，先关闭
+  if (progressWindow && !progressWindow.isDestroyed()) {
+    progressWindow.close();
+  }
+  
+  // 获取屏幕尺寸
+  const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
+  
+  progressWindow = new BrowserWindow({
+    width: 280,
+    height: 120,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    show: false,
+    skipTaskbar: true,
+    focusable: false,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    },
+    x: Math.round((screenWidth - 280) / 2), // 居中显示
+    y: Math.round((screenHeight - 120) / 2)
+  });
+
+  progressWindow.loadFile('progress.html');
+  
+  // 设置窗口属性
+  progressWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  progressWindow.setAlwaysOnTop(true, 'screen-saver');
+  
+  progressWindow.on('closed', () => {
+    console.log('进度窗口已关闭');
+    progressWindow = null;
+  });
+  
+  // 页面加载完成后显示窗口
+  progressWindow.webContents.once('did-finish-load', () => {
+    progressWindow.show();
+    console.log('进度窗口显示');
+  });
+  
+  console.log('进度窗口创建完成');
+}
+
+function updateProgress(status, text, detail = '', progress = 0) {
+  if (progressWindow && !progressWindow.isDestroyed()) {
+    progressWindow.webContents.send('update-progress', {
+      status,
+      text,
+      detail,
+      progress
+    });
+  }
+}
+
+function closeProgressWindow() {
+  if (progressWindow && !progressWindow.isDestroyed()) {
+    progressWindow.webContents.send('close-progress');
+    setTimeout(() => {
+      if (progressWindow && !progressWindow.isDestroyed()) {
+        progressWindow.close();
+      }
+    }, 1000); // 延迟1秒关闭，让用户看到最终状态
+  }
+}
+
 function showTranslatorButton(x, y) {
   console.log('=== 显示翻译按钮 ===');
   console.log('位置:', { x, y });
@@ -317,6 +445,194 @@ function hideTranslatorButton() {
   }
 }
 
+// 新增：通过快捷键触发翻译
+async function triggerTranslationFromShortcut() {
+  console.log('=== 通过快捷键触发翻译 ===');
+  
+  try {
+    // 设置翻译状态
+    isTranslating = true;
+    
+    // 创建并显示进度窗口
+    createProgressWindow();
+    updateProgress('copying', '正在复制选中文本...', '', 10);
+    
+    // 保存当前剪贴板内容，以便后续恢复
+    const originalClipboard = clipboard.readText();
+    console.log('保存原始剪贴板内容:', originalClipboard);
+    
+    // 使用更可靠的AppleScript来复制选中文本
+    const { exec } = require('child_process');
+    const copyScript = `
+      tell application "System Events"
+        set frontApp to name of first application process whose frontmost is true
+      end tell
+      
+      tell application frontApp
+        activate
+      end tell
+      
+      delay 0.1
+      
+      tell application "System Events"
+        tell process frontApp
+          try
+            -- 模拟 Cmd+C 复制操作
+            key code 8 using command down
+            delay 0.2
+            return "success"
+          on error errMsg
+            return "failed: " & errMsg
+          end try
+        end tell
+      end tell
+    `;
+    
+    console.log('执行复制选中文本的AppleScript...');
+    exec(`osascript -e '${copyScript}'`, async (error, stdout, stderr) => {
+      try {
+        if (error) {
+          console.error('AppleScript执行失败:', error);
+          updateProgress('error', '复制失败', '无法复制选中文本，请确保有文本被选中', 0);
+          setTimeout(() => {
+            closeProgressWindow();
+            showTranslationResult('', [{
+              service: 'system',
+              result: '无法复制选中文本，请确保有文本被选中',
+              success: false
+            }]);
+          }, 2000);
+          return;
+        }
+        
+        const scriptResult = stdout.trim();
+        console.log('AppleScript执行结果:', scriptResult);
+        
+        if (scriptResult.startsWith('failed:')) {
+          console.error('复制操作失败:', scriptResult);
+          updateProgress('error', '复制失败', '请确保有文本被选中', 0);
+          setTimeout(() => {
+            closeProgressWindow();
+            showTranslationResult('', [{
+              service: 'system',
+              result: '复制失败，请确保有文本被选中',
+              success: false
+            }]);
+          }, 2000);
+          return;
+        }
+        
+        // 等待一段时间确保剪贴板已更新
+        setTimeout(async () => {
+          try {
+            const newClipboard = clipboard.readText();
+            console.log('复制后的剪贴板内容:', newClipboard);
+            
+            // 检查剪贴板是否有新内容
+            if (!newClipboard || newClipboard.trim().length === 0) {
+              console.log('剪贴板为空');
+              updateProgress('error', '未检测到文本', '请先选中要翻译的文本', 0);
+              setTimeout(() => {
+                closeProgressWindow();
+                showTranslationResult('', [{
+                  service: 'system',
+                  result: '没有检测到选中的文本，请先选中要翻译的文本',
+                  success: false
+                }]);
+              }, 2000);
+              return;
+            }
+            
+            // 检查是否真的复制了新内容（与原剪贴板内容不同）
+            if (newClipboard === originalClipboard) {
+              console.log('剪贴板内容未变化，可能没有选中文本');
+              // 仍然尝试翻译，可能用户就是想翻译剪贴板中的内容
+            }
+            
+            const textToTranslate = newClipboard.trim();
+            console.log('开始翻译文本:', textToTranslate);
+            
+            updateProgress('copying', '复制完成', `已复制: ${textToTranslate.substring(0, 20)}${textToTranslate.length > 20 ? '...' : ''}`, 30);
+            
+            setTimeout(async () => {
+              updateProgress('translating', '开始翻译...', '正在连接翻译服务', 40);
+              
+              try {
+                // 执行翻译，传递进度回调
+                const translation = await translateText(textToTranslate, (status, text, detail, progress) => {
+                  updateProgress(status, text, detail, progress);
+                });
+                console.log('翻译结果:', translation);
+                
+                updateProgress('success', '翻译完成', '正在显示结果...', 100);
+                
+                setTimeout(() => {
+                  closeProgressWindow();
+                  // 显示翻译结果
+                  showTranslationResult(textToTranslate, translation);
+                }, 1000);
+                
+              } catch (error) {
+                console.error('翻译失败:', error);
+                updateProgress('error', '翻译失败', error.message, 0);
+                setTimeout(() => {
+                  closeProgressWindow();
+                  showTranslationResult('', [{
+                    service: 'system',
+                    result: '翻译失败: ' + error.message,
+                    success: false
+                  }]);
+                }, 2000);
+              }
+            }, 500);
+            
+            
+          } catch (error) {
+            console.error('翻译过程中发生错误:', error);
+            updateProgress('error', '翻译过程出错', error.message, 0);
+            setTimeout(() => {
+              closeProgressWindow();
+              showTranslationResult('', [{
+                service: 'system',
+                result: '翻译失败，请稍后重试: ' + error.message,
+                success: false
+              }]);
+            }, 2000);
+          }
+        }, 400); // 增加等待时间确保复制完成
+        
+      } catch (error) {
+        console.error('处理复制结果时发生错误:', error);
+        updateProgress('error', '处理失败', error.message, 0);
+        setTimeout(() => {
+          closeProgressWindow();
+          showTranslationResult('', [{
+            service: 'system',
+            result: '处理复制结果失败: ' + error.message,
+            success: false
+          }]);
+        }, 2000);
+      } finally {
+        // 重置翻译状态
+        isTranslating = false;
+      }
+    });
+    
+  } catch (error) {
+    console.error('快捷键翻译失败:', error);
+    updateProgress('error', '快捷键翻译失败', error.message, 0);
+    setTimeout(() => {
+      closeProgressWindow();
+      showTranslationResult('', [{
+        service: 'system',
+        result: '快捷键翻译失败: ' + error.message,
+        success: false
+      }]);
+    }, 2000);
+    isTranslating = false;
+  }
+}
+
 // 检查辅助功能权限
 function checkAccessibilityPermission() {
   if (process.platform === 'darwin') {
@@ -359,9 +675,9 @@ app.whenReady().then(() => {
     console.log('=== 注册全局快捷键 ===');
     console.log('快捷键:', config.shortcuts.translate);
     
-    // 注册全局快捷键 CMD+Shift+T 来检测文本选择
+    // 注册全局快捷键 CMD+Shift+T 来直接触发翻译
     globalShortcut.register(config.shortcuts.translate, () => {
-      console.log('=== 快捷键被触发 ===');
+      console.log('=== 翻译快捷键被触发 ===');
       
       // 如果正在翻译中，忽略新的快捷键
       if (isTranslating) {
@@ -369,38 +685,8 @@ app.whenReady().then(() => {
         return;
       }
       
-      // 模拟 CMD+C 来确保剪贴板更新
-      const { exec } = require('child_process');
-      exec('osascript -e \'tell application "System Events" to keystroke "c" using command down\'', (error) => {
-        if (error) {
-          console.error('模拟复制失败:', error);
-        }
-        
-        // 延迟一点时间确保剪贴板已更新
-        setTimeout(() => {
-          const selectedText = clipboard.readText();
-          console.log('剪贴板内容:', selectedText);
-          console.log('上次剪贴板内容:', lastClipboardText);
-          
-          // 检查剪贴板内容是否发生变化
-          if (selectedText && selectedText.trim().length > 0 && selectedText !== lastClipboardText) {
-            lastClipboardText = selectedText; // 更新记录
-            console.log('检测到新的文本，长度:', selectedText.trim().length);
-            
-            // 检查是否为英文文本
-            if (/^[a-zA-Z\s.,!?;:'"()-]+$/.test(selectedText.trim())) {
-              console.log('文本符合英文格式，显示翻译按钮');
-              // 获取鼠标位置
-              const { x, y } = screen.getCursorScreenPoint();
-              showTranslatorButton(x, y);
-            } else {
-              console.log('文本不符合英文格式，跳过');
-            }
-          } else {
-            console.log('剪贴板为空、无效或内容未变化');
-          }
-        }, 300); // 增加延迟时间确保剪贴板更新
-      });
+      // 直接触发翻译功能
+      triggerTranslationFromShortcut();
     });
     
     console.log('快捷键注册成功');
@@ -718,19 +1004,100 @@ app.whenReady().then(() => {
     return { width: 320, height: 200 };
   });
   
+  // 新增：打开设置窗口
+  ipcMain.handle('open-settings', () => {
+    console.log('=== 收到打开设置窗口请求 ===');
+    createSettingsWindow();
+  });
+  
+  // 新增：获取当前设置
+  ipcMain.handle('get-settings', () => {
+    console.log('=== 获取当前设置 ===');
+    return {
+      shortcuts: {
+        translate: currentShortcut
+      }
+    };
+  });
+  
+  // 新增：保存快捷键设置
+  ipcMain.handle('save-shortcut', (event, newShortcut) => {
+    console.log('=== 保存快捷键设置 ===', newShortcut);
+    
+    try {
+      // 验证快捷键格式
+      if (!newShortcut || typeof newShortcut !== 'string') {
+        return { success: false, error: '无效的快捷键格式' };
+      }
+      
+      // 注销旧的快捷键
+      if (currentShortcut) {
+        globalShortcut.unregister(currentShortcut);
+        console.log('已注销旧快捷键:', currentShortcut);
+      }
+      
+      // 注册新的快捷键
+      const success = globalShortcut.register(newShortcut, () => {
+        console.log('=== 新快捷键被触发 ===', newShortcut);
+        
+        // 如果正在翻译中，忽略新的快捷键
+        if (isTranslating) {
+          console.log('正在翻译中，忽略新的快捷键');
+          return;
+        }
+        
+        // 直接触发翻译功能
+        triggerTranslationFromShortcut();
+      });
+      
+      if (success) {
+        currentShortcut = newShortcut;
+        console.log('新快捷键注册成功:', newShortcut);
+        
+        // 这里可以保存到配置文件或用户偏好设置
+        // 暂时只保存在内存中
+        
+        return { success: true };
+      } else {
+        console.error('快捷键注册失败:', newShortcut);
+        
+        // 如果注册失败，恢复旧的快捷键
+        if (currentShortcut) {
+          globalShortcut.register(currentShortcut, () => {
+            triggerTranslationFromShortcut();
+          });
+        }
+        
+        return { success: false, error: '快捷键已被其他应用占用或格式无效' };
+      }
+    } catch (error) {
+      console.error('保存快捷键时发生错误:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
   console.log('应用初始化完成');
 });
 
 // 翻译函数 - 同时调用所有免费服务
-async function translateText(text) {
+async function translateText(text, progressCallback = null) {
   console.log('=== 开始翻译流程 ===');
   console.log('输入文本:', text);
   console.log('配置的免费翻译服务:', config.freeTranslationServices);
+  
+  const totalServices = config.freeTranslationServices.length;
+  let completedServices = 0;
   
   // 同时调用所有免费翻译服务
   const translationPromises = config.freeTranslationServices.map(async (service) => {
     try {
       console.log(`\n--- 调用 ${service} 翻译服务 ---`);
+      
+      // 更新进度
+      if (progressCallback) {
+        progressCallback('translating', `正在使用${getServiceDisplayName(service)}翻译...`, `${completedServices}/${totalServices} 服务已完成`, 50 + (completedServices / totalServices) * 40);
+      }
+      
       let result;
       
       switch (service) {
@@ -780,6 +1147,7 @@ async function translateText(text) {
           throw new Error(`Unknown translation service: ${service}`);
       }
       
+      completedServices++;
       return {
         service: service,
         result: result,
@@ -787,6 +1155,7 @@ async function translateText(text) {
       };
     } catch (error) {
       console.error(`${service} 翻译失败:`, error.message);
+      completedServices++;
       return {
         service: service,
         result: '翻译失败',

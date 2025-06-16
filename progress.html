@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>翻译进度</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, rgba(74, 144, 226, 0.95), rgba(80, 200, 120, 0.95));
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .progress-container {
+            padding: 20px;
+            text-align: center;
+            min-height: 80px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .progress-icon {
+            font-size: 24px;
+            margin-bottom: 10px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .progress-text {
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+            line-height: 1.4;
+        }
+
+        .progress-detail {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 12px;
+            margin-top: 5px;
+            font-weight: 400;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            margin-top: 15px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.6));
+            border-radius: 2px;
+            width: 0%;
+            transition: width 0.3s ease;
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { opacity: 0.6; }
+            50% { opacity: 1; }
+            100% { opacity: 0.6; }
+        }
+
+        /* 不同状态的颜色 */
+        .status-copying {
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.95), rgba(255, 152, 0, 0.95));
+        }
+
+        .status-translating {
+            background: linear-gradient(135deg, rgba(74, 144, 226, 0.95), rgba(80, 200, 120, 0.95));
+        }
+
+        .status-success {
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.95), rgba(139, 195, 74, 0.95));
+        }
+
+        .status-error {
+            background: linear-gradient(135deg, rgba(244, 67, 54, 0.95), rgba(233, 30, 99, 0.95));
+        }
+    </style>
+</head>
+<body>
+    <div class="progress-container">
+        <div class="progress-icon" id="progressIcon">⚡</div>
+        <div class="progress-text" id="progressText">准备翻译...</div>
+        <div class="progress-detail" id="progressDetail"></div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        // 更新进度状态
+        function updateProgress(status, text, detail = '', progress = 0) {
+            const body = document.body;
+            const icon = document.getElementById('progressIcon');
+            const textEl = document.getElementById('progressText');
+            const detailEl = document.getElementById('progressDetail');
+            const fillEl = document.getElementById('progressFill');
+
+            // 清除所有状态类
+            body.className = '';
+            
+            // 根据状态设置图标和样式
+            switch(status) {
+                case 'copying':
+                    body.classList.add('status-copying');
+                    icon.textContent = '📋';
+                    break;
+                case 'translating':
+                    body.classList.add('status-translating');
+                    icon.textContent = '🔄';
+                    break;
+                case 'success':
+                    body.classList.add('status-success');
+                    icon.textContent = '✅';
+                    icon.style.animation = 'none';
+                    break;
+                case 'error':
+                    body.classList.add('status-error');
+                    icon.textContent = '❌';
+                    icon.style.animation = 'none';
+                    break;
+                default:
+                    icon.textContent = '⚡';
+            }
+
+            textEl.textContent = text;
+            detailEl.textContent = detail;
+            fillEl.style.width = progress + '%';
+        }
+
+        // 监听进度更新
+        ipcRenderer.on('update-progress', (event, data) => {
+            updateProgress(data.status, data.text, data.detail, data.progress);
+        });
+
+        // 监听窗口关闭
+        ipcRenderer.on('close-progress', () => {
+            window.close();
+        });
+
+        // 初始状态
+        updateProgress('copying', '准备翻译...', '', 0);
+    </script>
+</body>
+</html> 
