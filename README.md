@@ -109,6 +109,8 @@ module.exports = {
 
 ## 安装和运行
 
+node version : 20.0.0
+
 ```bash
 # 安装依赖
 npm install
@@ -121,6 +123,8 @@ npm run build
 
 # 构建 macOS 应用
 npm run build-mac
+npm run build-mac-arm64
+
 ```
 
 ## 权限设置

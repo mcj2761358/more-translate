@@ -5,7 +5,58 @@ const fs = require('fs');
 // 加载环境变量配置
 require('dotenv').config();
 
-const config = require('./config');
+// 引入日志系统
+const logger = require('./logger');
+
+// 加载基础配置
+let config = require('./config');
+
+// 在应用启动时合并配置
+function initializeConfig() {
+  logger.log('=== 初始化配置 ===');
+  
+  // 检查环境变量是否加载
+  logger.log('环境变量检查:');
+  logger.log('- AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? '已设置' : '未设置');
+  logger.log('- AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? '已设置' : '未设置');
+  logger.log('- BAIDU_AK:', process.env.BAIDU_AK ? '已设置' : '未设置');
+  logger.log('- BAIDU_SK:', process.env.BAIDU_SK ? '已设置' : '未设置');
+  
+  // 尝试从用户配置文件加载API配置
+  try {
+    const userConfig = loadApiConfig();
+    if (userConfig && Object.keys(userConfig).length > 0) {
+      logger.log('从用户配置文件加载API密钥');
+      
+      // 合并API密钥配置
+      if (userConfig.microsoft) config.apiKeys.microsoft = userConfig.microsoft;
+      if (userConfig.deepl) config.apiKeys.deepl = userConfig.deepl;
+      if (userConfig.baidu) {
+        config.apiKeys.baidu.ak = userConfig.baidu.ak || config.apiKeys.baidu.ak;
+        config.apiKeys.baidu.sk = userConfig.baidu.sk || config.apiKeys.baidu.sk;
+      }
+      if (userConfig.tencent) {
+        config.apiKeys.tencent.secretId = userConfig.tencent.secretId || config.apiKeys.tencent.secretId;
+        config.apiKeys.tencent.secretKey = userConfig.tencent.secretKey || config.apiKeys.tencent.secretKey;
+        config.apiKeys.tencent.region = userConfig.tencent.region || config.apiKeys.tencent.region;
+      }
+      if (userConfig.aws) {
+        config.apiKeys.aws.accessKeyId = userConfig.aws.accessKeyId || config.apiKeys.aws.accessKeyId;
+        config.apiKeys.aws.secretAccessKey = userConfig.aws.secretAccessKey || config.apiKeys.aws.secretAccessKey;
+        config.apiKeys.aws.region = userConfig.aws.region || config.apiKeys.aws.region;
+      }
+    }
+  } catch (error) {
+    logger.log('用户配置文件加载失败，使用默认配置:', error.message);
+  }
+  
+  logger.log('配置初始化完成');
+  logger.log('最终API密钥状态:');
+  logger.log('- 百度 AK:', config.apiKeys.baidu.ak ? '已配置' : '未配置');
+  logger.log('- 百度 SK:', config.apiKeys.baidu.sk ? '已配置' : '未配置');
+  logger.log('- AWS Access Key:', config.apiKeys.aws.accessKeyId ? '已配置' : '未配置');
+  logger.log('- AWS Secret Key:', config.apiKeys.aws.secretAccessKey ? '已配置' : '未配置');
+}
 
 // 设置日志文件
 const logFile = path.join(app.getPath('userData'), 'app.log');
@@ -57,7 +108,7 @@ function writeLog(message) {
   const logMessage = `[${timestamp}] ${message}\n`;
   
   // 同时输出到控制台和文件
-  console.log(message);
+  logger.info(message);
   
   try {
     fs.appendFileSync(logFile, logMessage);
@@ -79,7 +130,7 @@ function writeDragLog(message) {
   }
   
   // 同时输出到控制台
-  console.log(`[DRAG] ${message}`);
+  logger.info(`[DRAG] ${message}`);
   
   // 通知主窗口更新日志显示
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -100,20 +151,21 @@ let currentShortcut = config.shortcuts.translate; // 当前快捷键
 function createMainWindow() {
   writeLog('=== 创建主窗口 ===');
   
-  // 检查是否为开发模式
+  // 检查是否为开发模式或调试模式
   const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'development';
+  const isDebug = process.argv.includes('--debug') || isDev;
   
   // 创建主窗口
   mainWindow = new BrowserWindow({
     width: 400,
     height: 300,
-    show: isDev, // 只在开发模式下显示
+    show: isDebug, // 在开发模式或调试模式下显示
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      devTools: isDev // 只在开发模式下启用开发者工具
+      devTools: true // 始终启用开发者工具
     },
-    title: isDev ? 'More Translator - 调试模式' : 'More Translator'
+    title: isDebug ? 'More Translator - 调试模式' : 'More Translator'
   });
 
   mainWindow.loadFile('index.html');
@@ -128,8 +180,8 @@ function createMainWindow() {
     mainWindow = null;
   });
   
-  // 只在开发模式下打开开发者工具
-  if (isDev) {
+  // 在调试模式下打开开发者工具
+  if (isDebug) {
     // 延迟打开开发者工具，避免初始化错误
     mainWindow.webContents.once('did-finish-load', () => {
       setTimeout(() => {
@@ -161,6 +213,48 @@ function createMainWindow() {
         }
       }
     });
+  }
+  
+  // 添加菜单栏用于调试
+  if (!isDev) {
+    const { Menu } = require('electron');
+    const template = [
+      {
+        label: '调试',
+        submenu: [
+          {
+            label: '显示开发者工具',
+            accelerator: 'CmdOrCtrl+Shift+I',
+            click: () => {
+              if (mainWindow) {
+                mainWindow.webContents.openDevTools();
+                mainWindow.show();
+              }
+            }
+          },
+          {
+            label: '重新加载',
+            accelerator: 'CmdOrCtrl+R',
+            click: () => {
+              if (mainWindow) {
+                mainWindow.webContents.reload();
+              }
+            }
+          },
+          {
+            label: '显示主窗口',
+            click: () => {
+              if (mainWindow) {
+                mainWindow.show();
+              }
+            }
+          }
+        ]
+      }
+    ];
+    
+    const menu = Menu.buildFromTemplate(template);
+    Menu.setApplicationMenu(menu);
   }
   
   writeLog('主窗口创建完成');
@@ -215,11 +309,11 @@ function createTranslatorWindow() {
 }
 
 function createResultWindow() {
-  console.log('=== 创建翻译结果窗口 ===');
+  logger.info('=== 创建翻译结果窗口 ===');
   
   // 检查现有窗口是否有效，如果有效则关闭
   if (resultWindow && !resultWindow.isDestroyed()) {
-    console.log('关闭现有结果窗口');
+    logger.info('关闭现有结果窗口');
     resultWindow.close();
     resultWindow = null;
   }
@@ -251,7 +345,7 @@ function createResultWindow() {
     }
   });
 
-  console.log('翻译结果窗口创建完成');
+  logger.info('翻译结果窗口创建完成');
   
   // 设置窗口可见性
   resultWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -259,7 +353,7 @@ function createResultWindow() {
   
   // 监听窗口关闭事件
   resultWindow.on('closed', () => {
-    console.log('翻译结果窗口已关闭');
+    logger.info('翻译结果窗口已关闭');
     resultWindow = null;
   });
   
@@ -267,7 +361,7 @@ function createResultWindow() {
 }
 
 function createSettingsWindow() {
-  console.log('=== 创建设置窗口 ===');
+  logger.info('=== 创建设置窗口 ===');
   
   // 检查现有窗口是否有效，如果有效则显示
   if (settingsWindow && !settingsWindow.isDestroyed()) {
@@ -299,12 +393,12 @@ function createSettingsWindow() {
     }
   });
 
-  console.log('设置窗口创建完成');
+  logger.info('设置窗口创建完成');
   settingsWindow.loadFile('settings.html');
   
   // 监听窗口关闭事件
   settingsWindow.on('closed', () => {
-    console.log('设置窗口已关闭');
+    logger.info('设置窗口已关闭');
     settingsWindow = null;
   });
   
@@ -318,7 +412,7 @@ function createSettingsWindow() {
 }
 
 function createProgressWindow() {
-  console.log('=== 创建进度窗口 ===');
+  logger.info('=== 创建进度窗口 ===');
   
   // 如果进度窗口已存在，先关闭
   if (progressWindow && !progressWindow.isDestroyed()) {
@@ -356,17 +450,17 @@ function createProgressWindow() {
   progressWindow.setAlwaysOnTop(true, 'screen-saver');
   
   progressWindow.on('closed', () => {
-    console.log('进度窗口已关闭');
+    logger.info('进度窗口已关闭');
     progressWindow = null;
   });
   
   // 页面加载完成后显示窗口
   progressWindow.webContents.once('did-finish-load', () => {
     progressWindow.show();
-    console.log('进度窗口显示');
+    logger.info('进度窗口显示');
   });
   
-  console.log('进度窗口创建完成');
+  logger.info('进度窗口创建完成');
 }
 
 function updateProgress(status, text, detail = '', progress = 0) {
@@ -392,8 +486,8 @@ function closeProgressWindow() {
 }
 
 function showTranslatorButton(x, y) {
-  console.log('=== 显示翻译按钮 ===');
-  console.log('位置:', { x, y });
+  logger.info('=== 显示翻译按钮 ===');
+  logger.info('位置:', { x, y });
   
   if (translatorWindow && !isTranslating) {
     // 调整位置，确保按钮在合适的位置显示
@@ -401,13 +495,13 @@ function showTranslatorButton(x, y) {
     translatorWindow.show();
     translatorWindow.focus(); // 确保窗口获得焦点
     
-    console.log('翻译按钮窗口已显示');
+    logger.info('翻译按钮窗口已显示');
     
     // 自动隐藏
     setTimeout(() => {
       if (translatorWindow && translatorWindow.isVisible() && !isTranslating) {
         translatorWindow.hide();
-        console.log('翻译按钮窗口已自动隐藏');
+        logger.info('翻译按钮窗口已自动隐藏');
       }
     }, config.window.translatorButtonTimeout);
   } else {
@@ -416,7 +510,7 @@ function showTranslatorButton(x, y) {
 }
 
 function showTranslatorButtonOnStartup() {
-  console.log('=== 启动时显示翻译按钮 ===');
+  logger.info('=== 启动时显示翻译按钮 ===');
   
   if (translatorWindow) {
     // 获取屏幕尺寸
@@ -431,7 +525,7 @@ function showTranslatorButtonOnStartup() {
     translatorWindow.show();
     translatorWindow.focus();
     
-    console.log('翻译按钮已显示在屏幕右上角:', { x, y });
+    logger.info('翻译按钮已显示在屏幕右上角:', { x, y });
     
     // 启动时显示的翻译按钮不会自动隐藏，用户可以手动关闭或拖动
   } else {
@@ -447,7 +541,7 @@ function hideTranslatorButton() {
 
 // 新增：通过快捷键触发翻译
 async function triggerTranslationFromShortcut() {
-  console.log('=== 通过快捷键触发翻译 ===');
+  logger.info('=== 通过快捷键触发翻译 ===');
   
   try {
     // 设置翻译状态
@@ -459,7 +553,7 @@ async function triggerTranslationFromShortcut() {
     
     // 保存当前剪贴板内容，以便后续恢复
     const originalClipboard = clipboard.readText();
-    console.log('保存原始剪贴板内容:', originalClipboard);
+    logger.info('保存原始剪贴板内容:', originalClipboard);
     
     // 使用更可靠的AppleScript来复制选中文本
     const { exec } = require('child_process');
@@ -488,7 +582,7 @@ async function triggerTranslationFromShortcut() {
       end tell
     `;
     
-    console.log('执行复制选中文本的AppleScript...');
+    logger.info('执行复制选中文本的AppleScript...');
     exec(`osascript -e '${copyScript}'`, async (error, stdout, stderr) => {
       try {
         if (error) {
@@ -506,7 +600,7 @@ async function triggerTranslationFromShortcut() {
         }
         
         const scriptResult = stdout.trim();
-        console.log('AppleScript执行结果:', scriptResult);
+        logger.info('AppleScript执行结果:', scriptResult);
         
         if (scriptResult.startsWith('failed:')) {
           console.error('复制操作失败:', scriptResult);
@@ -526,11 +620,11 @@ async function triggerTranslationFromShortcut() {
         setTimeout(async () => {
           try {
             const newClipboard = clipboard.readText();
-            console.log('复制后的剪贴板内容:', newClipboard);
+            logger.info('复制后的剪贴板内容:', newClipboard);
             
             // 检查剪贴板是否有新内容
             if (!newClipboard || newClipboard.trim().length === 0) {
-              console.log('剪贴板为空');
+              logger.info('剪贴板为空');
               updateProgress('error', '未检测到文本', '请先选中要翻译的文本', 0);
               setTimeout(() => {
                 closeProgressWindow();
@@ -545,12 +639,12 @@ async function triggerTranslationFromShortcut() {
             
             // 检查是否真的复制了新内容（与原剪贴板内容不同）
             if (newClipboard === originalClipboard) {
-              console.log('剪贴板内容未变化，可能没有选中文本');
+              logger.info('剪贴板内容未变化，可能没有选中文本');
               // 仍然尝试翻译，可能用户就是想翻译剪贴板中的内容
             }
             
             const textToTranslate = newClipboard.trim();
-            console.log('开始翻译文本:', textToTranslate);
+            logger.info('开始翻译文本:', textToTranslate);
             
             updateProgress('copying', '复制完成', `已复制: ${textToTranslate.substring(0, 20)}${textToTranslate.length > 20 ? '...' : ''}`, 30);
             
@@ -562,7 +656,7 @@ async function triggerTranslationFromShortcut() {
                 const translation = await translateText(textToTranslate, (status, text, detail, progress) => {
                   updateProgress(status, text, detail, progress);
                 });
-                console.log('翻译结果:', translation);
+                logger.info('翻译结果:', translation);
                 
                 updateProgress('success', '翻译完成', '正在显示结果...', 100);
                 
@@ -638,7 +732,7 @@ function checkAccessibilityPermission() {
   if (process.platform === 'darwin') {
     const isTrusted = systemPreferences.isTrustedAccessibilityClient(false);
     if (!isTrusted) {
-      console.log('需要辅助功能权限');
+      logger.info('需要辅助功能权限');
       // 提示用户授权
       const { dialog } = require('electron');
       dialog.showMessageBox(mainWindow, {
@@ -660,28 +754,35 @@ function checkAccessibilityPermission() {
 }
 
 app.whenReady().then(() => {
-  console.log('=== 应用启动 ===');
-  console.log('创建主窗口...');
+  logger.log('=== 应用启动 ===');
+  
+  // 初始化日志系统
+  logger.init();
+  
+  // 初始化配置
+  initializeConfig();
+  
+  logger.log('创建主窗口...');
   createMainWindow();
-  console.log('创建翻译窗口...');
+  logger.log('创建翻译窗口...');
   createTranslatorWindow();
 
   // 检查权限
-  console.log('检查辅助功能权限...');
+  logger.info('检查辅助功能权限...');
   const hasPermission = checkAccessibilityPermission();
-  console.log('权限检查结果:', hasPermission);
+  logger.info('权限检查结果:', hasPermission);
   
   if (hasPermission) {
-    console.log('=== 注册全局快捷键 ===');
-    console.log('快捷键:', config.shortcuts.translate);
+    logger.info('=== 注册全局快捷键 ===');
+    logger.info('快捷键:', config.shortcuts.translate);
     
     // 注册全局快捷键 CMD+Shift+T 来直接触发翻译
     globalShortcut.register(config.shortcuts.translate, () => {
-      console.log('=== 翻译快捷键被触发 ===');
+      logger.info('=== 翻译快捷键被触发 ===');
       
       // 如果正在翻译中，忽略新的快捷键
       if (isTranslating) {
-        console.log('正在翻译中，忽略新的快捷键');
+        logger.info('正在翻译中，忽略新的快捷键');
         return;
       }
       
@@ -689,23 +790,23 @@ app.whenReady().then(() => {
       triggerTranslationFromShortcut();
     });
     
-    console.log('快捷键注册成功');
+    logger.info('快捷键注册成功');
   } else {
     console.error('没有辅助功能权限，无法注册快捷键');
   }
 
-  console.log('=== 注册IPC处理器 ===');
+  logger.info('=== 注册IPC处理器 ===');
   // 监听来自渲染进程的消息
   ipcMain.handle('translate-text', async (event, text) => {
-    console.log('=== 收到翻译请求 ===');
-    console.log('要翻译的文本:', text);
+    logger.info('=== 收到翻译请求 ===');
+    logger.info('要翻译的文本:', text);
     
     // 设置翻译状态
     isTranslating = true;
     
     try {
       const translation = await translateText(text);
-      console.log('翻译结果:', translation);
+      logger.info('翻译结果:', translation);
       
       // 显示翻译结果
       showTranslationResult(text, translation);
@@ -723,13 +824,13 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('hide-translator', () => {
-    console.log('=== 隐藏翻译按钮 ===');
+    logger.info('=== 隐藏翻译按钮 ===');
     hideTranslatorButton();
   });
 
   // 新增：退出应用
   ipcMain.handle('quit-app', () => {
-    console.log('=== 收到退出应用请求 ===');
+    logger.info('=== 收到退出应用请求 ===');
     writeLog('用户确认退出应用');
     
     // 清理资源
@@ -752,7 +853,7 @@ app.whenReady().then(() => {
 
   // 新增：为对话框调整翻译窗口大小
   ipcMain.handle('resize-translator-for-dialog', () => {
-    console.log('=== 调整翻译窗口大小以显示对话框 ===');
+    logger.info('=== 调整翻译窗口大小以显示对话框 ===');
     if (translatorWindow && !translatorWindow.isDestroyed()) {
       // 调整窗口大小以容纳对话框 - 增加尺寸确保完整显示
       translatorWindow.setSize(500, 400);
@@ -762,7 +863,7 @@ app.whenReady().then(() => {
 
   // 新增：恢复翻译窗口大小
   ipcMain.handle('restore-translator-size', () => {
-    console.log('=== 恢复翻译窗口大小 ===');
+    logger.info('=== 恢复翻译窗口大小 ===');
     if (translatorWindow && !translatorWindow.isDestroyed()) {
       // 恢复原始大小
       translatorWindow.setSize(120, 40);
@@ -771,14 +872,14 @@ app.whenReady().then(() => {
 
   // 新增：复制选中文本到剪贴板并获取
   ipcMain.handle('copy-and-get-selected-text', () => {
-    console.log('=== 复制选中文本到剪贴板并获取 ===');
+    logger.info('=== 复制选中文本到剪贴板并获取 ===');
     
     const { exec } = require('child_process');
     
     return new Promise((resolve) => {
       // 先保存当前剪贴板内容
       const originalClipboard = clipboard.readText();
-      console.log('原始剪贴板内容:', originalClipboard);
+      logger.info('原始剪贴板内容:', originalClipboard);
       
       // 使用AppleScript复制选中文本到剪贴板
       const copyScript = `
@@ -804,26 +905,26 @@ app.whenReady().then(() => {
         end tell
       `;
       
-      console.log('执行复制操作...');
+      logger.info('执行复制操作...');
       exec(`osascript -e '${copyScript}'`, (error, stdout, stderr) => {
         if (error) {
-          console.log('复制操作失败:', error.message);
+          logger.info('复制操作失败:', error.message);
           // 复制失败，尝试直接获取选中文本
           getSelectedTextDirectly(resolve, originalClipboard);
         } else {
-          console.log('复制操作结果:', stdout.trim());
+          logger.info('复制操作结果:', stdout.trim());
           
           // 等待一小段时间确保复制完成
           setTimeout(() => {
             const newClipboard = clipboard.readText();
-            console.log('复制后的剪贴板内容:', newClipboard);
+            logger.info('复制后的剪贴板内容:', newClipboard);
             
             // 检查剪贴板是否有新内容
             if (newClipboard && newClipboard !== originalClipboard && newClipboard.trim().length > 0) {
-              console.log('成功获取复制的文本:', newClipboard);
+              logger.info('成功获取复制的文本:', newClipboard);
               resolve(newClipboard.trim());
             } else {
-              console.log('剪贴板没有新内容，尝试直接获取选中文本');
+              logger.info('剪贴板没有新内容，尝试直接获取选中文本');
               // 如果剪贴板没有变化，尝试直接获取
               getSelectedTextDirectly(resolve, originalClipboard);
             }
@@ -834,7 +935,7 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('get-selected-text', () => {
-    console.log('=== 获取选中文本 ===');
+    logger.info('=== 获取选中文本 ===');
     
     // 尝试使用AppleScript获取当前选中的文本
     const { exec } = require('child_process');
@@ -881,21 +982,21 @@ app.whenReady().then(() => {
     
     exec(`osascript -e '${script}'`, (error, stdout, stderr) => {
       if (error) {
-        console.log('AppleScript获取选中文本失败:', error.message);
+        logger.info('AppleScript获取选中文本失败:', error.message);
         // 如果AppleScript失败，使用回退文本或剪贴板
         const clipboardText = fallbackText || clipboard.readText();
-        console.log('回退到剪贴板文本:', clipboardText);
+        logger.info('回退到剪贴板文本:', clipboardText);
         resolve(clipboardText);
       } else {
         const selectedText = stdout.trim();
-        console.log('AppleScript获取的选中文本:', selectedText);
+        logger.info('AppleScript获取的选中文本:', selectedText);
         
         if (selectedText && selectedText.length > 0) {
           resolve(selectedText);
         } else {
           // 如果AppleScript返回空，使用回退文本或剪贴板
           const clipboardText = fallbackText || clipboard.readText();
-          console.log('AppleScript返回空，回退到剪贴板文本:', clipboardText);
+          logger.info('AppleScript返回空，回退到剪贴板文本:', clipboardText);
           resolve(clipboardText);
         }
       }
@@ -903,20 +1004,20 @@ app.whenReady().then(() => {
   }
 
   ipcMain.handle('check-permission', () => {
-    console.log('=== 检查权限 ===');
+    logger.info('=== 检查权限 ===');
     const hasPermission = checkAccessibilityPermission();
-    console.log('权限状态:', hasPermission);
+    logger.info('权限状态:', hasPermission);
     return hasPermission;
   });
   
   // 将窗口带到前面
   ipcMain.handle('bring-to-front', () => {
-    console.log('=== 将翻译窗口带到前面 ===');
+    logger.info('=== 将翻译窗口带到前面 ===');
     if (translatorWindow) {
       translatorWindow.setAlwaysOnTop(true, 'screen-saver');
       translatorWindow.show();
       translatorWindow.focus();
-      console.log('翻译窗口已带到前面');
+      logger.info('翻译窗口已带到前面');
     }
   });
   
@@ -968,19 +1069,19 @@ app.whenReady().then(() => {
   
   // 新增：移动翻译结果窗口
   ipcMain.handle('move-result-window', (event, deltaX, deltaY) => {
-    console.log('收到移动结果窗口请求:', { deltaX, deltaY });
+    logger.info('收到移动结果窗口请求:', { deltaX, deltaY });
     if (resultWindow && !resultWindow.isDestroyed()) {
       const [currentX, currentY] = resultWindow.getPosition();
       const newX = currentX + deltaX;
       const newY = currentY + deltaY;
       
-      console.log(`当前位置: (${currentX}, ${currentY}), 新位置: (${newX}, ${newY})`);
+      logger.info(`当前位置: (${currentX}, ${currentY}), 新位置: (${newX}, ${newY})`);
       
       // 直接设置新位置，不限制边界，允许拖动到任意位置
       resultWindow.setPosition(newX, newY);
-      console.log(`翻译结果窗口移动到: x=${newX}, y=${newY}`);
+      logger.info(`翻译结果窗口移动到: x=${newX}, y=${newY}`);
     } else {
-      console.log('结果窗口不存在或已销毁');
+      logger.info('结果窗口不存在或已销毁');
     }
   });
   
@@ -1006,13 +1107,13 @@ app.whenReady().then(() => {
   
   // 新增：打开设置窗口
   ipcMain.handle('open-settings', () => {
-    console.log('=== 收到打开设置窗口请求 ===');
+    logger.info('=== 收到打开设置窗口请求 ===');
     createSettingsWindow();
   });
   
   // 新增：获取当前设置
   ipcMain.handle('get-settings', () => {
-    console.log('=== 获取当前设置 ===');
+    logger.info('=== 获取当前设置 ===');
     return {
       shortcuts: {
         translate: currentShortcut
@@ -1022,7 +1123,7 @@ app.whenReady().then(() => {
   
   // 新增：保存快捷键设置
   ipcMain.handle('save-shortcut', (event, newShortcut) => {
-    console.log('=== 保存快捷键设置 ===', newShortcut);
+    logger.info('=== 保存快捷键设置 ===', newShortcut);
     
     try {
       // 验证快捷键格式
@@ -1033,16 +1134,16 @@ app.whenReady().then(() => {
       // 注销旧的快捷键
       if (currentShortcut) {
         globalShortcut.unregister(currentShortcut);
-        console.log('已注销旧快捷键:', currentShortcut);
+        logger.info('已注销旧快捷键:', currentShortcut);
       }
       
       // 注册新的快捷键
       const success = globalShortcut.register(newShortcut, () => {
-        console.log('=== 新快捷键被触发 ===', newShortcut);
+        logger.info('=== 新快捷键被触发 ===', newShortcut);
         
         // 如果正在翻译中，忽略新的快捷键
         if (isTranslating) {
-          console.log('正在翻译中，忽略新的快捷键');
+          logger.info('正在翻译中，忽略新的快捷键');
           return;
         }
         
@@ -1052,7 +1153,7 @@ app.whenReady().then(() => {
       
       if (success) {
         currentShortcut = newShortcut;
-        console.log('新快捷键注册成功:', newShortcut);
+        logger.info('新快捷键注册成功:', newShortcut);
         
         // 这里可以保存到配置文件或用户偏好设置
         // 暂时只保存在内存中
@@ -1076,14 +1177,195 @@ app.whenReady().then(() => {
     }
   });
   
-  console.log('应用初始化完成');
+  // API配置管理
+  const configPath = path.join(app.getPath('userData'), 'api-config.json');
+
+  function loadApiConfig() {
+    try {
+      if (fs.existsSync(configPath)) {
+        const configData = fs.readFileSync(configPath, 'utf8');
+        return JSON.parse(configData);
+      }
+    } catch (error) {
+      console.error('加载API配置失败:', error);
+    }
+    return {};
+  }
+
+  function saveApiConfig(apiConfig) {
+    try {
+      fs.writeFileSync(configPath, JSON.stringify(apiConfig, null, 2));
+      
+      // 更新运行时配置
+      config.apiKeys = {
+        microsoft: apiConfig.microsoft || '',
+        deepl: apiConfig.deepl || '',
+        baidu: {
+          ak: apiConfig.baidu?.ak || '',
+          sk: apiConfig.baidu?.sk || ''
+        },
+        tencent: {
+          secretId: apiConfig.tencent?.secretId || '',
+          secretKey: apiConfig.tencent?.secretKey || '',
+          region: apiConfig.tencent?.region || 'ap-beijing'
+        },
+        aws: {
+          accessKeyId: apiConfig.aws?.accessKeyId || '',
+          secretAccessKey: apiConfig.aws?.secretAccessKey || '',
+          region: apiConfig.aws?.region || 'us-east-1'
+        }
+      };
+      
+      logger.info('API配置已更新:', config.apiKeys);
+      return true;
+    } catch (error) {
+      console.error('保存API配置失败:', error);
+      return false;
+    }
+  }
+
+  // 添加API配置相关的IPC处理器
+  ipcMain.handle('get-api-config', () => {
+    logger.info('=== 获取API配置 ===');
+    return loadApiConfig();
+  });
+
+  ipcMain.handle('save-api-config', (event, apiConfig) => {
+    logger.info('=== 保存API配置 ===', apiConfig);
+    try {
+      const success = saveApiConfig(apiConfig);
+      return { success, error: success ? null : '保存失败' };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('test-api-config', async (event, apiConfig) => {
+    logger.log('=== 测试API配置 ===');
+    try {
+      const availableServices = ['Google翻译', '有道翻译']; // 默认免费服务
+      
+      // 测试百度翻译
+      if (apiConfig.baidu?.ak && apiConfig.baidu?.sk) {
+        try {
+          // 这里可以添加实际的API测试逻辑
+          // 暂时只检查密钥是否存在
+          availableServices.push('百度翻译');
+        } catch (error) {
+          console.error('百度翻译测试失败:', error);
+        }
+      }
+      
+      // 测试其他服务
+      if (apiConfig.deepl) availableServices.push('DeepL');
+      if (apiConfig.microsoft) availableServices.push('微软翻译');
+      if (apiConfig.aws?.accessKeyId && apiConfig.aws?.secretAccessKey) availableServices.push('Amazon翻译');
+      if (apiConfig.tencent?.secretId && apiConfig.tencent?.secretKey) availableServices.push('腾讯翻译');
+      
+      return { 
+        success: true, 
+        availableServices: availableServices
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 日志相关的IPC处理器
+  ipcMain.handle('get-log-file-path', () => {
+    logger.log('=== 获取日志文件路径 ===');
+    return logger.getLogFile();
+  });
+
+  ipcMain.handle('read-log', (event, lines = 100) => {
+    logger.log('=== 读取日志文件 ===', `最近${lines}行`);
+    return logger.readLog(lines);
+  });
+
+  ipcMain.handle('clear-log', () => {
+    logger.log('=== 清空日志文件 ===');
+    logger.clearLog();
+    return true;
+  });
+
+  // 在应用启动时加载用户API配置
+  const userApiConfig = loadApiConfig();
+  if (Object.keys(userApiConfig).length > 0) {
+    // 合并用户配置到默认配置
+    config.apiKeys = {
+      ...config.apiKeys,
+      microsoft: userApiConfig.microsoft || config.apiKeys.microsoft,
+      deepl: userApiConfig.deepl || config.apiKeys.deepl,
+      baidu: {
+        ak: userApiConfig.baidu?.ak || config.apiKeys.baidu.ak,
+        sk: userApiConfig.baidu?.sk || config.apiKeys.baidu.sk
+      },
+      tencent: {
+        secretId: userApiConfig.tencent?.secretId || config.apiKeys.tencent.secretId,
+        secretKey: userApiConfig.tencent?.secretKey || config.apiKeys.tencent.secretKey,
+        region: userApiConfig.tencent?.region || config.apiKeys.tencent.region
+      },
+      aws: {
+        accessKeyId: userApiConfig.aws?.accessKeyId || config.apiKeys.aws.accessKeyId,
+        secretAccessKey: userApiConfig.aws?.secretAccessKey || config.apiKeys.aws.secretAccessKey,
+        region: userApiConfig.aws?.region || config.apiKeys.aws.region
+      }
+    };
+    logger.info('已加载用户API配置');
+  }
+  
+  logger.info('应用初始化完成');
 });
 
 // 翻译函数 - 同时调用所有免费服务
 async function translateText(text, progressCallback = null) {
-  console.log('=== 开始翻译流程 ===');
-  console.log('输入文本:', text);
-  console.log('配置的免费翻译服务:', config.freeTranslationServices);
+  logger.log('=== 开始翻译流程 ===');
+  logger.log('输入文本:', text);
+  
+  // 详细的配置调试信息
+  logger.log('=== 配置调试信息 ===');
+  logger.log('当前工作目录:', process.cwd());
+  logger.log('应用路径:', app.getAppPath());
+  logger.log('用户数据目录:', app.getPath('userData'));
+  logger.log('是否为开发模式:', process.env.NODE_ENV === 'development');
+  logger.log('是否为打包应用:', app.isPackaged);
+  
+  // 检查配置对象
+  logger.log('配置对象存在:', !!config);
+  if (config) {
+    logger.log('免费翻译服务:', config.freeTranslationServices);
+    logger.log('翻译服务:', config.translationServices);
+    logger.log('源语言:', config.translation?.sourceLanguage);
+    logger.log('目标语言:', config.translation?.targetLanguage);
+    logger.log('超时设置:', config.translation?.timeout);
+    
+    // 检查API密钥配置
+    logger.log('API密钥配置:');
+    logger.log('- Google: 免费服务');
+    logger.log('- 有道: 免费服务');
+    logger.log('- 百度 AK:', config.apiKeys?.baidu?.ak ? '已配置' : '未配置');
+    logger.log('- 百度 SK:', config.apiKeys?.baidu?.sk ? '已配置' : '未配置');
+    logger.log('- 微软:', config.apiKeys?.microsoft ? '已配置' : '未配置');
+    logger.log('- DeepL:', config.apiKeys?.deepl ? '已配置' : '未配置');
+    logger.log('- AWS Access Key:', config.apiKeys?.aws?.accessKeyId ? '已配置' : '未配置');
+    logger.log('- AWS Secret Key:', config.apiKeys?.aws?.secretAccessKey ? '已配置' : '未配置');
+    logger.log('- 腾讯 Secret ID:', config.apiKeys?.tencent?.secretId ? '已配置' : '未配置');
+    logger.log('- 腾讯 Secret Key:', config.apiKeys?.tencent?.secretKey ? '已配置' : '未配置');
+  } else {
+    logger.error('配置对象不存在！');
+  }
+  
+  // 检查网络连接
+  logger.log('=== 网络连接检查 ===');
+  try {
+    const axios = require('axios');
+    const testResponse = await axios.get('https://www.google.com', { timeout: 5000 });
+    logger.log('网络连接正常，状态码:', testResponse.status);
+  } catch (error) {
+    logger.error('网络连接异常:', error.message);
+  }
+  
+  logger.log('配置的免费翻译服务:', config.freeTranslationServices);
   
   const totalServices = config.freeTranslationServices.length;
   let completedServices = 0;
@@ -1091,7 +1373,7 @@ async function translateText(text, progressCallback = null) {
   // 同时调用所有免费翻译服务
   const translationPromises = config.freeTranslationServices.map(async (service) => {
     try {
-      console.log(`\n--- 调用 ${service} 翻译服务 ---`);
+      logger.info(`\n--- 调用 ${service} 翻译服务 ---`);
       
       // 更新进度
       if (progressCallback) {
@@ -1129,7 +1411,7 @@ async function translateText(text, progressCallback = null) {
           }
           break;
         case 'amazon':
-          console.log("Config=" + JSON.stringify(config.apiKeys))
+          logger.info("Config=" + JSON.stringify(config.apiKeys))
           if (config.apiKeys.aws.accessKeyId && config.apiKeys.aws.secretAccessKey) {
             result = await translateWithAmazon(text);
           } else {
@@ -1167,88 +1449,88 @@ async function translateText(text, progressCallback = null) {
   
   // 等待所有翻译服务完成
   const results = await Promise.all(translationPromises);
-  console.log('所有翻译服务结果:', results);
+  logger.info('所有翻译服务结果:', results);
   
   return results;
 }
 
 // 备用翻译函数 - 按优先级尝试（保持向后兼容）
 async function translateTextFallback(text) {
-  console.log('=== 开始备用翻译流程 ===');
-  console.log('输入文本:', text);
-  console.log('配置的翻译服务:', config.translationServices);
+  logger.info('=== 开始备用翻译流程 ===');
+  logger.info('输入文本:', text);
+  logger.info('配置的翻译服务:', config.translationServices);
   
   // 按配置的优先级尝试不同的翻译服务
   for (const service of config.translationServices) {
-    console.log(`\n--- 尝试 ${service} 翻译服务 ---`);
+    logger.info(`\n--- 尝试 ${service} 翻译服务 ---`);
     
     try {
       let result;
       
       switch (service) {
         case 'google':
-          console.log('调用 Google 翻译...');
+          logger.info('调用 Google 翻译...');
           result = await translateWithGoogle(text);
           break;
         case 'microsoft':
           if (config.apiKeys.microsoft) {
-            console.log('调用微软翻译...');
+            logger.info('调用微软翻译...');
             result = await translateWithMicrosoft(text);
           } else {
-            console.log('Microsoft API key not configured, skipping...');
+            logger.info('Microsoft API key not configured, skipping...');
             continue;
           }
           break;
         case 'youdao':
-          console.log('调用有道翻译...');
+          logger.info('调用有道翻译...');
           result = await translateWithYoudao(text);
           break;
         case 'baidu':
           if (config.apiKeys.baidu.ak && config.apiKeys.baidu.sk) {
-            console.log('调用百度翻译...');
+            logger.info('调用百度翻译...');
             result = await translateWithBaidu(text);
           } else {
-            console.log('Baidu API credentials not configured, skipping...');
+            logger.info('Baidu API credentials not configured, skipping...');
             continue;
           }
           break;
         case 'deepl_free':
           if (config.apiKeys.deepl) {
-            console.log('调用 DeepL 翻译...');
+            logger.info('调用 DeepL 翻译...');
             result = await translateWithDeepL(text);
           } else {
-            console.log('DeepL API key not configured, skipping...');
+            logger.info('DeepL API key not configured, skipping...');
             continue;
           }
           break;
         case 'amazon':
           if (config.apiKeys.aws.accessKeyId && config.apiKeys.aws.secretAccessKey) {
-            console.log('调用 Amazon 翻译...');
+            logger.info('调用 Amazon 翻译...');
             result = await translateWithAmazon(text);
           } else {
-            console.log('AWS credentials not configured, skipping...');
+            logger.info('AWS credentials not configured, skipping...');
             continue;
           }
           break;
         case 'tencent':
           if (config.apiKeys.tencent.secretId && config.apiKeys.tencent.secretKey) {
-            console.log('调用腾讯翻译...');
+            logger.info('调用腾讯翻译...');
             result = await translateWithTencent(text);
           } else {
-            console.log('Tencent API credentials not configured, skipping...');
+            logger.info('Tencent API credentials not configured, skipping...');
             continue;
           }
           break;
         default:
-          console.log(`Unknown translation service: ${service}`);
+          logger.info(`Unknown translation service: ${service}`);
           continue;
       }
       
       if (result) {
-        console.log(`${service} 翻译成功:`, result);
+        logger.info(`${service} 翻译成功:`, result);
         return result;
       } else {
-        console.log(`${service} 翻译返回空结果`);
+        logger.info(`${service} 翻译返回空结果`);
       }
     } catch (error) {
       console.error(`${service} 翻译失败:`, error.message);
@@ -1256,16 +1538,24 @@ async function translateTextFallback(text) {
     }
   }
   
-  console.log('所有翻译服务都失败了');
+  logger.info('所有翻译服务都失败了');
   return '所有翻译服务都不可用，请稍后重试';
 }
 
 // Google 翻译函数
 async function translateWithGoogle(text) {
-  console.log('Google 翻译 - 开始请求');
-  const axios = require('axios');
+  logger.info('Google 翻译 - 开始请求');
   
   try {
+    // 尝试加载axios，如果失败则使用内置的https模块
+    let axios;
+    try {
+      axios = require('axios');
+    } catch (axiosError) {
+      logger.info('axios模块加载失败，使用内置https模块:', axiosError.message);
+      return await translateWithGoogleFallback(text);
+    }
+    
     const params = {
       client: 'gtx',
       sl: config.translation.sourceLanguage,
@@ -1273,23 +1563,23 @@ async function translateWithGoogle(text) {
       dt: 't',
       q: text
     };
-    console.log('Google 翻译 - 请求参数:', params);
+    logger.info('Google 翻译 - 请求参数:', params);
     
     const response = await axios.get('https://translate.googleapis.com/translate_a/single', {
       params: params,
       timeout: config.translation.timeout
     });
 
-    console.log('Google 翻译 - 响应状态:', response.status);
-    console.log('Google 翻译 - 响应数据:', response.data);
+    logger.info('Google 翻译 - 响应状态:', response.status);
+    logger.info('Google 翻译 - 响应数据:', response.data);
 
     if (response.data && response.data[0] && response.data[0][0]) {
       const result = response.data[0][0][0];
-      console.log('Google 翻译 - 成功获取结果:', result);
+      logger.info('Google 翻译 - 成功获取结果:', result);
       return result;
     }
     
-    console.log('Google 翻译 - 响应格式无效');
+    logger.info('Google 翻译 - 响应格式无效');
     throw new Error('Invalid Google response format');
   } catch (error) {
     console.error('Google 翻译 - 请求失败:', error.message);
@@ -1297,9 +1587,70 @@ async function translateWithGoogle(text) {
   }
 }
 
+// Google 翻译备用方案（使用内置https模块）
+async function translateWithGoogleFallback(text) {
+  logger.info('Google 翻译备用方案 - 使用内置https模块');
+  const https = require('https');
+  const querystring = require('querystring');
+  
+  return new Promise((resolve, reject) => {
+    const params = querystring.stringify({
+      client: 'gtx',
+      sl: config.translation.sourceLanguage,
+      tl: config.translation.targetLanguage,
+      dt: 't',
+      q: text
+    });
+    
+    const options = {
+      hostname: 'translate.googleapis.com',
+      path: `/translate_a/single?${params}`,
+      method: 'GET',
+      timeout: config.translation.timeout,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+      }
+    };
+    
+    const req = https.request(options, (res) => {
+      let data = '';
+      
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(data);
+          if (result && result[0] && result[0][0]) {
+            const translation = result[0][0][0];
+            logger.info('Google 翻译备用方案 - 成功获取结果:', translation);
+            resolve(translation);
+          } else {
+            reject(new Error('Invalid Google response format'));
+          }
+        } catch (parseError) {
+          reject(new Error('Failed to parse Google response'));
+        }
+      });
+    });
+    
+    req.on('error', (error) => {
+      reject(error);
+    });
+    
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+    
+    req.end();
+  });
+}
+
 // 备用翻译方案1：微软翻译API
 async function translateWithMicrosoft(text) {
-  console.log('微软翻译 - 开始请求');
+  logger.info('微软翻译 - 开始请求');
   const axios = require('axios');
   
   try {
@@ -1315,9 +1666,9 @@ async function translateWithMicrosoft(text) {
       'X-ClientTraceId': require('crypto').randomUUID()
     };
     
-    console.log('微软翻译 - 请求参数:', requestParams);
-    console.log('微软翻译 - 请求数据:', requestData);
-    console.log('微软翻译 - API Key:', config.apiKeys.microsoft ? '已配置' : '未配置');
+    logger.info('微软翻译 - 请求参数:', requestParams);
+    logger.info('微软翻译 - 请求数据:', requestData);
+    logger.info('微软翻译 - API Key:', config.apiKeys.microsoft ? '已配置' : '未配置');
     
     const response = await axios.post('https://api.cognitive.microsofttranslator.com/translate', 
       requestData, 
@@ -1328,16 +1679,16 @@ async function translateWithMicrosoft(text) {
       }
     );
     
-    console.log('微软翻译 - 响应状态:', response.status);
-    console.log('微软翻译 - 响应数据:', response.data);
+    logger.info('微软翻译 - 响应状态:', response.status);
+    logger.info('微软翻译 - 响应数据:', response.data);
     
     if (response.data && response.data[0] && response.data[0].translations && response.data[0].translations[0]) {
       const result = response.data[0].translations[0].text;
-      console.log('微软翻译 - 成功获取结果:', result);
+      logger.info('微软翻译 - 成功获取结果:', result);
       return result;
     }
     
-    console.log('微软翻译 - 响应格式无效');
+    logger.info('微软翻译 - 响应格式无效');
     throw new Error('Invalid Microsoft response format');
   } catch (error) {
     console.error('微软翻译 - 请求失败:', error.message);
@@ -1347,7 +1698,7 @@ async function translateWithMicrosoft(text) {
 
 // 备用翻译方案2：有道翻译（简单实现）
 async function translateWithYoudao(text) {
-  console.log('有道翻译 - 开始请求');
+  logger.info('有道翻译 - 开始请求');
   const axios = require('axios');
   
   try {
@@ -1357,7 +1708,7 @@ async function translateWithYoudao(text) {
       to: config.translation.targetLanguage,
       doctype: 'json'
     };
-    console.log('有道翻译 - 请求参数:', params);
+    logger.info('有道翻译 - 请求参数:', params);
     
     // 使用有道翻译的免费API
     const response = await axios.get('https://fanyi.youdao.com/translate', {
@@ -1365,16 +1716,16 @@ async function translateWithYoudao(text) {
       timeout: config.translation.timeout
     });
     
-    console.log('有道翻译 - 响应状态:', response.status);
-    console.log('有道翻译 - 响应数据:', response.data);
+    logger.info('有道翻译 - 响应状态:', response.status);
+    logger.info('有道翻译 - 响应数据:', response.data);
     
     if (response.data && response.data.translateResult && response.data.translateResult[0] && response.data.translateResult[0][0]) {
       const result = response.data.translateResult[0][0].tgt;
-      console.log('有道翻译 - 成功获取结果:', result);
+      logger.info('有道翻译 - 成功获取结果:', result);
       return result;
     }
     
-    console.log('有道翻译 - 响应格式无效');
+    logger.info('有道翻译 - 响应格式无效');
     throw new Error('Invalid Youdao response format');
   } catch (error) {
     console.error('有道翻译 - 请求失败:', error.message);
@@ -1384,19 +1735,26 @@ async function translateWithYoudao(text) {
 
 // 百度翻译API（使用百度AI开放平台）
 async function translateWithBaidu(text) {
-  console.log('百度翻译 - 开始请求');
-  const axios = require('axios');
+  logger.info('百度翻译 - 开始请求');
   
   try {
+    // 尝试加载axios，如果失败则使用内置的https模块
+    let axios;
+    try {
+      axios = require('axios');
+    } catch (axiosError) {
+      logger.info('axios模块加载失败，使用内置https模块:', axiosError.message);
+      return await translateWithBaiduFallback(text);
+    }
     // 百度AI开放平台API参数
     const AK = config.apiKeys.baidu.ak;
     const SK = config.apiKeys.baidu.sk;
     
-    console.log('百度翻译 - API 凭证:', AK ? '已配置' : '未配置');
+    logger.info('百度翻译 - API 凭证:', AK ? '已配置' : '未配置');
     
     // 获取Access Token
     const accessToken = await getBaiduAccessToken(AK, SK);
-    console.log('百度翻译 - Access Token获取成功');
+    logger.info('百度翻译 - Access Token获取成功');
     
     // 语言代码映射
     const langMap = {
@@ -1434,7 +1792,7 @@ async function translateWithBaidu(text) {
       timeout: config.translation.timeout
     };
     
-    console.log('百度翻译 - 请求参数:', {
+    logger.info('百度翻译 - 请求参数:', {
       from: from,
       to: to,
       q: text.substring(0, 50) + (text.length > 50 ? '...' : '')
@@ -1442,12 +1800,12 @@ async function translateWithBaidu(text) {
     
     const response = await axios(options);
     
-    console.log('百度翻译 - 响应状态:', response.status);
-    console.log('百度翻译 - 响应数据:', response.data);
+    logger.info('百度翻译 - 响应状态:', response.status);
+    logger.info('百度翻译 - 响应数据:', response.data);
     
     if (response.data && response.data.result && response.data.result.trans_result && response.data.result.trans_result.length > 0) {
       const result = response.data.result.trans_result[0].dst;
-      console.log('百度翻译 - 成功获取结果:', result);
+      logger.info('百度翻译 - 成功获取结果:', result);
       return result;
     }
     
@@ -1469,7 +1827,7 @@ async function translateWithBaidu(text) {
       throw new Error(`Baidu AI API Error: ${errorMsg}`);
     }
     
-    console.log('百度翻译 - 响应格式无效');
+    logger.info('百度翻译 - 响应格式无效');
     throw new Error('Invalid Baidu AI response format');
   } catch (error) {
     console.error('百度翻译 - 请求失败:', error.message);
@@ -1477,34 +1835,211 @@ async function translateWithBaidu(text) {
   }
 }
 
+// 百度翻译备用方案（使用内置https模块）
+async function translateWithBaiduFallback(text) {
+  logger.info('百度翻译备用方案 - 使用内置https模块');
+  const https = require('https');
+  const querystring = require('querystring');
+  
+  try {
+    // 百度AI开放平台API参数
+    const AK = config.apiKeys.baidu.ak;
+    const SK = config.apiKeys.baidu.sk;
+    
+    logger.info('百度翻译备用方案 - API 凭证:', AK ? '已配置' : '未配置');
+    
+    // 获取Access Token
+    const accessToken = await getBaiduAccessTokenFallback(AK, SK);
+    logger.info('百度翻译备用方案 - Access Token获取成功');
+    
+    // 语言代码映射
+    const langMap = {
+      'en': 'en',
+      'zh': 'zh',
+      'zh-cn': 'zh',
+      'zh-tw': 'zh',
+      'ja': 'jp',
+      'ko': 'kor',
+      'fr': 'fra',
+      'de': 'de',
+      'es': 'spa',
+      'it': 'it',
+      'ru': 'ru',
+      'pt': 'pt',
+      'ar': 'ara'
+    };
+    
+    const from = langMap[config.translation.sourceLanguage] || 'en';
+    const to = langMap[config.translation.targetLanguage] || 'zh';
+    
+    const postData = JSON.stringify({
+      from: from,
+      to: to,
+      q: text
+    });
+    
+    return new Promise((resolve, reject) => {
+      const options = {
+        hostname: 'aip.baidubce.com',
+        path: `/rpc/2.0/mt/texttrans/v1?access_token=${accessToken}`,
+        method: 'POST',
+        timeout: config.translation.timeout,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      };
+      
+      const req = https.request(options, (res) => {
+        let data = '';
+        
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        res.on('end', () => {
+          try {
+            const result = JSON.parse(data);
+            if (result && result.result && result.result.trans_result && result.result.trans_result.length > 0) {
+              const translation = result.result.trans_result[0].dst;
+              logger.info('百度翻译备用方案 - 成功获取结果:', translation);
+              resolve(translation);
+            } else if (result && result.error_code) {
+              const errorMessages = {
+                '1': 'Unknown error',
+                '2': 'Service temporarily unavailable',
+                '3': 'Unsupported method',
+                '4': 'Request limit reached',
+                '6': 'Invalid client id',
+                '17': 'Open api daily request limit reached',
+                '18': 'Open api qps request limit reached',
+                '19': 'Open api total request limit reached',
+                '100': 'Invalid parameter',
+                '110': 'Access token invalid or no longer valid',
+                '111': 'Access token expired'
+              };
+              const errorMsg = errorMessages[result.error_code] || `Error code: ${result.error_code}`;
+              reject(new Error(`Baidu AI API Error: ${errorMsg}`));
+            } else {
+              reject(new Error('Invalid Baidu AI response format'));
+            }
+          } catch (parseError) {
+            reject(new Error('Failed to parse Baidu response'));
+          }
+        });
+      });
+      
+      req.on('error', (error) => {
+        reject(error);
+      });
+      
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Request timeout'));
+      });
+      
+      req.write(postData);
+      req.end();
+    });
+    
+  } catch (error) {
+    console.error('百度翻译备用方案 - 请求失败:', error.message);
+    throw error;
+  }
+}
+
 // 获取百度AI开放平台Access Token
 async function getBaiduAccessToken(AK, SK) {
-  const axios = require('axios');
-  
-  const options = {
-    method: 'POST',
-    url: `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${AK}&client_secret=${SK}`,
-    timeout: 5000
-  };
+  try {
+    const axios = require('axios');
+    
+    const options = {
+      method: 'POST',
+      url: `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${AK}&client_secret=${SK}`,
+      timeout: 5000
+    };
+    
+    return new Promise((resolve, reject) => {
+      axios(options)
+        .then(res => {
+          if (res.data && res.data.access_token) {
+            resolve(res.data.access_token);
+          } else {
+            reject(new Error('Failed to get access token'));
+          }
+        })
+        .catch(error => {
+          reject(new Error(`Access token request failed: ${error.message}`));
+        });
+    });
+  } catch (axiosError) {
+    logger.info('axios模块加载失败，使用备用方案获取Access Token');
+    return await getBaiduAccessTokenFallback(AK, SK);
+  }
+}
+
+// 获取百度AI开放平台Access Token备用方案
+async function getBaiduAccessTokenFallback(AK, SK) {
+  const https = require('https');
+  const querystring = require('querystring');
   
   return new Promise((resolve, reject) => {
-    axios(options)
-      .then(res => {
-        if (res.data && res.data.access_token) {
-          resolve(res.data.access_token);
-        } else {
-          reject(new Error('Failed to get access token'));
-        }
-      })
-      .catch(error => {
-        reject(new Error(`Access token request failed: ${error.message}`));
+    const postData = querystring.stringify({
+      grant_type: 'client_credentials',
+      client_id: AK,
+      client_secret: SK
+    });
+    
+    const options = {
+      hostname: 'aip.baidubce.com',
+      path: '/oauth/2.0/token',
+      method: 'POST',
+      timeout: 5000,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+    
+    const req = https.request(options, (res) => {
+      let data = '';
+      
+      res.on('data', (chunk) => {
+        data += chunk;
       });
+      
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(data);
+          if (result && result.access_token) {
+            resolve(result.access_token);
+          } else {
+            reject(new Error('Failed to get access token'));
+          }
+        } catch (parseError) {
+          reject(new Error('Failed to parse access token response'));
+        }
+      });
+    });
+    
+    req.on('error', (error) => {
+      reject(new Error(`Access token request failed: ${error.message}`));
+    });
+    
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Access token request timeout'));
+    });
+    
+    req.write(postData);
+    req.end();
   });
 }
 
 // DeepL API Free 翻译
 async function translateWithDeepL(text) {
-  console.log('DeepL 翻译 - 开始请求');
+  logger.info('DeepL 翻译 - 开始请求');
   const axios = require('axios');
   
   try {
@@ -1519,8 +2054,8 @@ async function translateWithDeepL(text) {
       'Content-Type': 'application/json'
     };
     
-    console.log('DeepL 翻译 - 请求参数:', requestData);
-    console.log('DeepL 翻译 - API Key:', config.apiKeys.deepl ? '已配置' : '未配置');
+    logger.info('DeepL 翻译 - 请求参数:', requestData);
+    logger.info('DeepL 翻译 - API Key:', config.apiKeys.deepl ? '已配置' : '未配置');
     
     const response = await axios.post('https://api-free.deepl.com/v2/translate', 
       requestData, 
@@ -1530,16 +2065,16 @@ async function translateWithDeepL(text) {
       }
     );
     
-    console.log('DeepL 翻译 - 响应状态:', response.status);
-    console.log('DeepL 翻译 - 响应数据:', response.data);
+    logger.info('DeepL 翻译 - 响应状态:', response.status);
+    logger.info('DeepL 翻译 - 响应数据:', response.data);
     
     if (response.data && response.data.translations && response.data.translations[0]) {
       const result = response.data.translations[0].text;
-      console.log('DeepL 翻译 - 成功获取结果:', result);
+      logger.info('DeepL 翻译 - 成功获取结果:', result);
       return result;
     }
     
-    console.log('DeepL 翻译 - 响应格式无效');
+    logger.info('DeepL 翻译 - 响应格式无效');
     throw new Error('Invalid DeepL response format');
   } catch (error) {
     console.error('DeepL 翻译 - 请求失败:', error.message);
@@ -1549,7 +2084,7 @@ async function translateWithDeepL(text) {
 
 // Amazon Translate 翻译
 async function translateWithAmazon(text) {
-  console.log('Amazon 翻译 - 开始请求');
+  logger.info('Amazon 翻译 - 开始请求');
   const AWS = require('aws-sdk');
   
   try {
@@ -1568,19 +2103,19 @@ async function translateWithAmazon(text) {
       TargetLanguageCode: config.translation.targetLanguage === 'zh' ? 'zh-cn' : config.translation.targetLanguage
     };
     
-    console.log('Amazon 翻译 - 请求参数:', params);
-    console.log('Amazon 翻译 - AWS 凭证:', config.apiKeys.aws.accessKeyId ? '已配置' : '未配置');
+    logger.info('Amazon 翻译 - 请求参数:', params);
+    logger.info('Amazon 翻译 - AWS 凭证:', config.apiKeys.aws.accessKeyId ? '已配置' : '未配置');
     
     const result = await translate.translateText(params).promise();
     
-    console.log('Amazon 翻译 - 响应数据:', result);
+    logger.info('Amazon 翻译 - 响应数据:', result);
     
     if (result && result.TranslatedText) {
-      console.log('Amazon 翻译 - 成功获取结果:', result.TranslatedText);
+      logger.info('Amazon 翻译 - 成功获取结果:', result.TranslatedText);
       return result.TranslatedText;
     }
     
-    console.log('Amazon 翻译 - 响应格式无效');
+    logger.info('Amazon 翻译 - 响应格式无效');
     throw new Error('Invalid Amazon response format');
   } catch (error) {
     console.error('Amazon 翻译 - 请求失败:', error.message);
@@ -1590,7 +2125,7 @@ async function translateWithAmazon(text) {
 
 // 腾讯翻译君 API
 async function translateWithTencent(text) {
-  console.log('腾讯翻译 - 开始请求');
+  logger.info('腾讯翻译 - 开始请求');
   const axios = require('axios');
   const crypto = require('crypto');
   
@@ -1629,8 +2164,8 @@ async function translateWithTencent(text) {
       ProjectId: 0
     };
     
-    console.log('腾讯翻译 - 请求参数:', payload);
-    console.log('腾讯翻译 - API 凭证:', config.apiKeys.tencent.secretId ? '已配置' : '未配置');
+    logger.info('腾讯翻译 - 请求参数:', payload);
+    logger.info('腾讯翻译 - API 凭证:', config.apiKeys.tencent.secretId ? '已配置' : '未配置');
     
     // 构建签名
     const payloadStr = JSON.stringify(payload);
@@ -1682,12 +2217,12 @@ async function translateWithTencent(text) {
       timeout: config.translation.timeout
     });
     
-    console.log('腾讯翻译 - 响应状态:', response.status);
-    console.log('腾讯翻译 - 响应数据:', response.data);
+    logger.info('腾讯翻译 - 响应状态:', response.status);
+    logger.info('腾讯翻译 - 响应数据:', response.data);
     
     if (response.data && response.data.Response && response.data.Response.TargetText) {
       const result = response.data.Response.TargetText;
-      console.log('腾讯翻译 - 成功获取结果:', result);
+      logger.info('腾讯翻译 - 成功获取结果:', result);
       return result;
     }
     
@@ -1695,7 +2230,7 @@ async function translateWithTencent(text) {
       throw new Error(`Tencent API Error: ${response.data.Response.Error.Message}`);
     }
     
-    console.log('腾讯翻译 - 响应格式无效');
+    logger.info('腾讯翻译 - 响应格式无效');
     throw new Error('Invalid Tencent response format');
   } catch (error) {
     console.error('腾讯翻译 - 请求失败:', error.message);
@@ -1704,9 +2239,9 @@ async function translateWithTencent(text) {
 }
 
 function showTranslationResult(originalText, translationResults) {
-  console.log('=== 显示翻译结果窗口 ===');
-  console.log('原文:', originalText);
-  console.log('翻译结果:', translationResults);
+  logger.info('=== 显示翻译结果窗口 ===');
+  logger.info('原文:', originalText);
+  logger.info('翻译结果:', translationResults);
   
   try {
     const resultWin = createResultWindow();
@@ -1922,16 +2457,16 @@ function showTranslationResult(originalText, translationResults) {
               // 拖动功能 - 使用CSS -webkit-app-region: drag 作为主要方案
               const dragHandle = document.getElementById('dragHandle');
               
-              console.log('初始化翻译结果窗口拖动功能', dragHandle);
+              logger.info('初始化翻译结果窗口拖动功能', dragHandle);
               
               if (!dragHandle) {
                   console.error('拖动手柄元素未找到！');
               } else {
-                  console.log('拖动手柄已找到，使用CSS拖动方案');
+                  logger.info('拖动手柄已找到，使用CSS拖动方案');
                   
                   // 添加测试点击事件
                   dragHandle.addEventListener('click', (e) => {
-                      console.log('拖动手柄被点击');
+                      logger.info('拖动手柄被点击');
                   });
                   
                   // 添加悬停效果
@@ -1946,7 +2481,7 @@ function showTranslationResult(originalText, translationResults) {
               
               // 备用JavaScript拖动方案
               dragHandle && dragHandle.addEventListener('mousedown', (e) => {
-                  console.log('JavaScript拖动方案激活', e);
+                  logger.info('JavaScript拖动方案激活', e);
                   isDragging = true;
                   dragOffset.x = e.screenX;
                   dragOffset.y = e.screenY;
@@ -1959,7 +2494,7 @@ function showTranslationResult(originalText, translationResults) {
                   e.preventDefault();
                   e.stopPropagation();
                   
-                  console.log('拖动状态设置完成，isDragging:', isDragging);
+                  logger.info('拖动状态设置完成，isDragging:', isDragging);
               });
               
               document.addEventListener('mousemove', (e) => {
@@ -1967,7 +2502,7 @@ function showTranslationResult(originalText, translationResults) {
                       const deltaX = e.screenX - dragOffset.x;
                       const deltaY = e.screenY - dragOffset.y;
                       
-                      console.log('拖动中:', { deltaX, deltaY, screenX: e.screenX, screenY: e.screenY });
+                      logger.info('拖动中:', { deltaX, deltaY, screenX: e.screenX, screenY: e.screenY });
                       
                       // 使用异步调用，不等待返回
                       ipcRenderer.invoke('move-result-window', deltaX, deltaY).catch(err => {
@@ -1993,7 +2528,7 @@ function showTranslationResult(originalText, translationResults) {
               
               document.addEventListener('mouseup', (e) => {
                   if (isDragging) {
-                      console.log('结束拖动翻译结果窗口');
+                      logger.info('结束拖动翻译结果窗口');
                       isDragging = false;
                       dragHandle.style.cursor = 'move';
                       document.body.style.cursor = '';
@@ -2008,7 +2543,7 @@ function showTranslationResult(originalText, translationResults) {
               // 全局鼠标释放事件（防止鼠标移出窗口时丢失事件）
               window.addEventListener('mouseup', (e) => {
                   if (isDragging) {
-                      console.log('全局鼠标释放 - 结束拖动');
+                      logger.info('全局鼠标释放 - 结束拖动');
                       isDragging = false;
                       dragHandle.style.cursor = 'move';
                       document.body.style.cursor = '';
@@ -2030,7 +2565,7 @@ function showTranslationResult(originalText, translationResults) {
               document.body.addEventListener('mousedown', (e) => {
                   // 只有在点击顶部40px区域且不是关闭按钮时才启用拖动
                   if (e.clientY <= 40 && !e.target.classList.contains('close-btn') && !isDragging) {
-                      console.log('备用拖动方案激活');
+                      logger.info('备用拖动方案激活');
                       isDragging = true;
                       dragOffset.x = e.screenX;
                       dragOffset.y = e.screenY;
@@ -2076,7 +2611,7 @@ function showTranslationResult(originalText, translationResults) {
     
     // 等待页面加载完成后显示窗口
     resultWin.webContents.on('did-finish-load', () => {
-      console.log('翻译结果页面加载完成');
+      logger.info('翻译结果页面加载完成');
       
       // 获取鼠标位置并显示窗口
       const { x, y } = screen.getCursorScreenPoint();
@@ -2084,13 +2619,13 @@ function showTranslationResult(originalText, translationResults) {
       resultWin.show();
       resultWin.focus();
       
-      console.log('翻译结果窗口已显示');
+      logger.info('翻译结果窗口已显示');
       
       // 15秒后自动关闭
       setTimeout(() => {
         if (resultWin && !resultWin.isDestroyed()) {
           resultWin.close();
-          console.log('翻译结果窗口已自动关闭');
+          logger.info('翻译结果窗口已自动关闭');
         }
       }, 30000);
     });
@@ -2133,7 +2668,7 @@ app.on('activate', () => {
 });
 
 app.on('will-quit', () => {
-  console.log('=== 应用退出 ===');
+  logger.info('=== 应用退出 ===');
   // 注销所有快捷键
   globalShortcut.unregisterAll();
   

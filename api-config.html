@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API配置</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .config-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 30px;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .config-title {
+            font-size: 28px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 30px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .service-group {
+            margin-bottom: 30px;
+            padding: 25px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .service-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .service-icon {
+            font-size: 24px;
+            margin-right: 12px;
+        }
+
+        .service-title {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .service-status {
+            margin-left: auto;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-free {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+            border: 1px solid rgba(76, 175, 80, 0.3);
+        }
+
+        .status-paid {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            border: 1px solid rgba(255, 193, 7, 0.3);
+        }
+
+        .service-description {
+            font-size: 14px;
+            opacity: 0.8;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            opacity: 0.9;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.4);
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+        }
+
+        .form-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .buttons-container {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 40px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 120px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.6);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .btn-test {
+            background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(23, 162, 184, 0.4);
+        }
+
+        .btn-test:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(23, 162, 184, 0.6);
+        }
+
+        .status-message {
+            text-align: center;
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .status-message.show {
+            opacity: 1;
+        }
+
+        .status-message.success {
+            background: rgba(40, 167, 69, 0.2);
+            border: 1px solid rgba(40, 167, 69, 0.4);
+            color: #28a745;
+        }
+
+        .status-message.error {
+            background: rgba(220, 53, 69, 0.2);
+            border: 1px solid rgba(220, 53, 69, 0.4);
+            color: #dc3545;
+        }
+
+        .help-link {
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            font-size: 12px;
+            margin-top: 5px;
+            display: inline-block;
+        }
+
+        .help-link:hover {
+            color: white;
+            text-decoration: underline;
+        }
+
+        .toggle-password {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.6);
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .input-container {
+            position: relative;
+        }
+
+        /* 添加API配置按钮样式 */
+        .api-config-btn {
+            width: 30px;
+            height: 30px;
+            border: none;
+            border-radius: 6px;
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-left: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .api-config-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="config-container">
+        <h1 class="config-title">🔑 API配置管理</h1>
+        
+        <!-- 免费服务 -->
+        <div class="service-group">
+            <div class="service-header">
+                <span class="service-icon">🆓</span>
+                <span class="service-title">免费翻译服务</span>
+                <span class="service-status status-free">免费</span>
+            </div>
+            <div class="service-description">
+                这些服务无需配置API密钥即可使用，但可能有使用限制。
+            </div>
+            <p style="font-size: 14px; opacity: 0.8;">
+                ✅ Google翻译 &nbsp;&nbsp; ✅ 有道翻译 &nbsp;&nbsp; ✅ Amazon翻译
+            </p>
+        </div>
+
+        <!-- 百度翻译 -->
+        <div class="service-group">
+            <div class="service-header">
+                <span class="service-icon">🔵</span>
+                <span class="service-title">百度翻译</span>
+                <span class="service-status status-paid">需要密钥</span>
+            </div>
+            <div class="service-description">
+                百度翻译API提供高质量翻译服务，每月有免费额度。
+                <a href="https://fanyi-api.baidu.com/" class="help-link" target="_blank">获取API密钥 →</a>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">APP ID (AK)</label>
+                    <input type="text" class="form-input" id="baiduAK" placeholder="请输入百度翻译APP ID">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">密钥 (SK)</label>
+                    <div class="input-container">
+                        <input type="password" class="form-input" id="baiduSK" placeholder="请输入百度翻译密钥">
+                        <button type="button" class="toggle-password" onclick="togglePassword('baiduSK')">👁️</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- DeepL -->
+        <div class="service-group">
+            <div class="service-header">
+                <span class="service-icon">🔷</span>
+                <span class="service-title">DeepL翻译</span>
+                <span class="service-status status-paid">需要密钥</span>
+            </div>
+            <div class="service-description">
+                DeepL提供高质量的AI翻译服务，有免费和付费版本。
+                <a href="https://www.deepl.com/pro-api" class="help-link" target="_blank">获取API密钥 →</a>
+            </div>
+            <div class="form-group">
+                <label class="form-label">API密钥</label>
+                <div class="input-container">
+                    <input type="password" class="form-input" id="deeplKey" placeholder="请输入DeepL API密钥">
+                    <button type="button" class="toggle-password" onclick="togglePassword('deeplKey')">👁️</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 微软翻译 -->
+        <div class="service-group">
+            <div class="service-header">
+                <span class="service-icon">🔶</span>
+                <span class="service-title">微软翻译</span>
+                <span class="service-status status-paid">需要密钥</span>
+            </div>
+            <div class="service-description">
+                微软认知服务翻译API，提供多语言翻译支持。
+                <a href="https://azure.microsoft.com/zh-cn/services/cognitive-services/translator/" class="help-link" target="_blank">获取API密钥 →</a>
+            </div>
+            <div class="form-group">
+                <label class="form-label">订阅密钥</label>
+                <div class="input-container">
+                    <input type="password" class="form-input" id="microsoftKey" placeholder="请输入微软翻译订阅密钥">
+                    <button type="button" class="toggle-password" onclick="togglePassword('microsoftKey')">👁️</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- AWS翻译 -->
+        <div class="service-group">
+            <div class="service-header">
+                <span class="service-icon">🟠</span>
+                <span class="service-title">Amazon翻译</span>
+                <span class="service-status status-paid">需要密钥</span>
+            </div>
+            <div class="service-description">
+                Amazon Translate提供快速、高质量的语言翻译服务。
+                <a href="https://aws.amazon.com/translate/" class="help-link" target="_blank">获取AWS凭证 →</a>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Access Key ID</label>
+                    <input type="text" class="form-input" id="awsAccessKey" placeholder="请输入AWS Access Key ID">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Secret Access Key</label>
+                    <div class="input-container">
+                        <input type="password" class="form-input" id="awsSecretKey" placeholder="请输入AWS Secret Access Key">
+                        <button type="button" class="toggle-password" onclick="togglePassword('awsSecretKey')">👁️</button>
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">区域</label>
+                <input type="text" class="form-input" id="awsRegion" placeholder="us-east-1" value="us-east-1">
+            </div>
+        </div>
+
+        <!-- 腾讯翻译 -->
+        <div class="service-group">
+            <div class="service-header">
+                <span class="service-icon">🟢</span>
+                <span class="service-title">腾讯翻译</span>
+                <span class="service-status status-paid">需要密钥</span>
+            </div>
+            <div class="service-description">
+                腾讯翻译君提供准确、流畅的翻译服务。
+                <a href="https://cloud.tencent.com/product/tmt" class="help-link" target="_blank">获取API密钥 →</a>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Secret ID</label>
+                    <input type="text" class="form-input" id="tencentSecretId" placeholder="请输入腾讯云Secret ID">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Secret Key</label>
+                    <div class="input-container">
+                        <input type="password" class="form-input" id="tencentSecretKey" placeholder="请输入腾讯云Secret Key">
+                        <button type="button" class="toggle-password" onclick="togglePassword('tencentSecretKey')">👁️</button>
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">区域</label>
+                <input type="text" class="form-input" id="tencentRegion" placeholder="ap-beijing" value="ap-beijing">
+            </div>
+        </div>
+
+        <div class="buttons-container">
+            <button class="btn btn-test" id="testButton">测试连接</button>
+            <button class="btn btn-primary" id="saveButton">保存配置</button>
+            <button class="btn btn-secondary" id="cancelButton">取消</button>
+            <button class="api-config-btn" id="apiConfigBtn" title="API配置">
+                🔑
+            </button>
+        </div>
+
+        <div class="status-message" id="statusMessage"></div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        // 页面加载时获取当前配置
+        async function loadConfig() {
+            try {
+                const config = await ipcRenderer.invoke('get-api-config');
+                
+                // 填充表单
+                document.getElementById('baiduAK').value = config.baidu?.ak || '';
+                document.getElementById('baiduSK').value = config.baidu?.sk || '';
+                document.getElementById('deeplKey').value = config.deepl || '';
+                document.getElementById('microsoftKey').value = config.microsoft || '';
+                document.getElementById('awsAccessKey').value = config.aws?.accessKeyId || '';
+                document.getElementById('awsSecretKey').value = config.aws?.secretAccessKey || '';
+                document.getElementById('awsRegion').value = config.aws?.region || 'us-east-1';
+                document.getElementById('tencentSecretId').value = config.tencent?.secretId || '';
+                document.getElementById('tencentSecretKey').value = config.tencent?.secretKey || '';
+                document.getElementById('tencentRegion').value = config.tencent?.region || 'ap-beijing';
+                
+            } catch (error) {
+                console.error('加载配置失败:', error);
+                showStatus('加载配置失败: ' + error.message, 'error');
+            }
+        }
+
+        // 保存配置
+        document.getElementById('saveButton').addEventListener('click', async () => {
+            try {
+                const config = {
+                    baidu: {
+                        ak: document.getElementById('baiduAK').value.trim(),
+                        sk: document.getElementById('baiduSK').value.trim()
+                    },
+                    deepl: document.getElementById('deeplKey').value.trim(),
+                    microsoft: document.getElementById('microsoftKey').value.trim(),
+                    aws: {
+                        accessKeyId: document.getElementById('awsAccessKey').value.trim(),
+                        secretAccessKey: document.getElementById('awsSecretKey').value.trim(),
+                        region: document.getElementById('awsRegion').value.trim() || 'us-east-1'
+                    },
+                    tencent: {
+                        secretId: document.getElementById('tencentSecretId').value.trim(),
+                        secretKey: document.getElementById('tencentSecretKey').value.trim(),
+                        region: document.getElementById('tencentRegion').value.trim() || 'ap-beijing'
+                    }
+                };
+
+                const result = await ipcRenderer.invoke('save-api-config', config);
+                
+                if (result.success) {
+                    showStatus('配置保存成功！', 'success');
+                    setTimeout(() => {
+                        window.close();
+                    }, 2000);
+                } else {
+                    showStatus('保存失败: ' + result.error, 'error');
+                }
+            } catch (error) {
+                console.error('保存配置失败:', error);
+                showStatus('保存失败: ' + error.message, 'error');
+            }
+        });
+
+        // 测试连接
+        document.getElementById('testButton').addEventListener('click', async () => {
+            try {
+                showStatus('正在测试连接...', 'success');
+                
+                const config = {
+                    baidu: {
+                        ak: document.getElementById('baiduAK').value.trim(),
+                        sk: document.getElementById('baiduSK').value.trim()
+                    },
+                    deepl: document.getElementById('deeplKey').value.trim(),
+                    microsoft: document.getElementById('microsoftKey').value.trim(),
+                    aws: {
+                        accessKeyId: document.getElementById('awsAccessKey').value.trim(),
+                        secretAccessKey: document.getElementById('awsSecretKey').value.trim(),
+                        region: document.getElementById('awsRegion').value.trim() || 'us-east-1'
+                    },
+                    tencent: {
+                        secretId: document.getElementById('tencentSecretId').value.trim(),
+                        secretKey: document.getElementById('tencentSecretKey').value.trim(),
+                        region: document.getElementById('tencentRegion').value.trim() || 'ap-beijing'
+                    }
+                };
+
+                const result = await ipcRenderer.invoke('test-api-config', config);
+                
+                if (result.success) {
+                    showStatus(`测试成功！可用服务: ${result.availableServices.join(', ')}`, 'success');
+                } else {
+                    showStatus('测试失败: ' + result.error, 'error');
+                }
+            } catch (error) {
+                console.error('测试连接失败:', error);
+                showStatus('测试失败: ' + error.message, 'error');
+            }
+        });
+
+        // 取消按钮
+        document.getElementById('cancelButton').addEventListener('click', () => {
+            window.close();
+        });
+
+        // 切换密码显示
+        function togglePassword(inputId) {
+            const input = document.getElementById(inputId);
+            const button = input.nextElementSibling;
+            
+            if (input.type === 'password') {
+                input.type = 'text';
+                button.textContent = '🙈';
+            } else {
+                input.type = 'password';
+                button.textContent = '👁️';
+            }
+        }
+
+        // 显示状态消息
+        function showStatus(message, type) {
+            const statusMessage = document.getElementById('statusMessage');
+            statusMessage.textContent = message;
+            statusMessage.className = `status-message ${type} show`;
+            
+            setTimeout(() => {
+                statusMessage.classList.remove('show');
+            }, 5000);
+        }
+
+        // 添加API配置按钮事件
+        document.getElementById('apiConfigBtn').addEventListener('click', (e) => {
+            // 防拖动误触发检测
+            if (wasRecentlyDragged) {
+                console.log('最近有拖动操作，忽略API配置按钮点击');
+                return;
+            }
+            
+            const clickDuration = Date.now() - clickStartTime;
+            const clickDistance = Math.sqrt(
+                Math.pow(e.clientX - clickStartPosition.x, 2) + 
+                Math.pow(e.clientY - clickStartPosition.y, 2)
+            );
+            
+            if (clickDuration > 500 || clickDistance > 5) {
+                console.log('检测到拖动操作，忽略API配置按钮点击');
+                return;
+            }
+            
+            console.log('打开API配置窗口');
+            ipcRenderer.invoke('open-api-config');
+        });
+
+        // 页面加载时加载配置
+        loadConfig();
+    </script>
+</body>
+</html> 
