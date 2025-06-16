@@ -1,6 +1,21 @@
 // 翻译服务配置
 module.exports = {
-  // 翻译服务优先级（按顺序尝试）
+  // 免费翻译服务（同时调用显示）
+  freeTranslationServices: [
+    'google',      // Google 翻译（免费，无需密钥）
+    'youdao',      // 有道翻译（免费，无需密钥）
+    'deepl_free',   // DeepL API Free（需要免费API密钥）
+    'amazon'      // Amazon Translate（需要 AWS 凭证）
+  ],
+  
+  // 付费翻译服务（作为备用）
+  paidTranslationServices: [
+    'microsoft',   // 微软翻译（需要 API 密钥）
+    'amazon',      // Amazon Translate（需要 AWS 凭证）
+    'tencent'      // 腾讯翻译君（需要 API 密钥）
+  ],
+  
+  // 翻译服务优先级（按顺序尝试，保持向后兼容）
   translationServices: [
     'google',      // Google 翻译（免费，无需密钥）
     'microsoft',   // 微软翻译（需要 API 密钥）
@@ -10,7 +25,17 @@ module.exports = {
   // API 密钥配置
   apiKeys: {
     microsoft: process.env.MICROSOFT_TRANSLATE_KEY || '',
-    // 可以添加其他服务的 API 密钥
+    deepl: process.env.DEEPL_API_KEY || '',
+    tencent: {
+      secretId: process.env.TENCENT_SECRET_ID || '',
+      secretKey: process.env.TENCENT_SECRET_KEY || '',
+      region: process.env.TENCENT_REGION || 'ap-beijing'
+    },
+    aws: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+      region: process.env.AWS_REGION || 'us-east-1'
+    }
   },
   
   // 翻译设置
