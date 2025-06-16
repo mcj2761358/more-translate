@@ -279,13 +279,15 @@
         .confirm-content {
             background: white;
             border-radius: 12px;
-            padding: 30px;
-            width: 350px;
-            max-width: 90vw;
+            padding: 25px;
+            width: 380px;
+            max-width: 95vw;
+            max-height: 90vh;
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
             transform: scale(0.8);
             transition: transform 0.3s ease;
             position: relative;
+            overflow: auto;
         }
         
         .confirm-dialog.show .confirm-content {
@@ -303,9 +305,11 @@
         .confirm-message {
             font-size: 16px;
             color: #666;
-            margin-bottom: 30px;
+            margin-bottom: 25px;
             text-align: center;
             line-height: 1.6;
+            word-wrap: break-word;
+            white-space: normal;
         }
         
         .confirm-buttons {
@@ -363,7 +367,7 @@
     </div>
     
     <div class="translation-popup" id="translationPopup">
-        <button class="close-btn" onclick="closeTranslation()" title="关闭">✕</button>
+        <button class="close-btn" onclick="closeTranslation(event)" title="关闭">✕</button>
         <div class="translation-content" id="translationContent"></div>
     </div>
 
@@ -471,7 +475,21 @@
         function showConfirmDialog() {
             console.log('=== 显示确认对话框 ===');
             
-            // 先通知主进程调整窗口大小
+            // 检查是否已经存在确认对话框，如果存在则不创建新的
+            const existingDialog = document.querySelector('.confirm-dialog');
+            if (existingDialog) {
+                console.log('确认对话框已存在，不重复创建');
+                return;
+            }
+            
+            // 先隐藏翻译按钮容器
+            const translatorContainer = document.querySelector('.translator-container');
+            if (translatorContainer) {
+                translatorContainer.style.display = 'none';
+                console.log('翻译按钮容器已隐藏以显示对话框');
+            }
+            
+            // 调整窗口大小以显示对话框
             ipcRenderer.invoke('resize-translator-for-dialog');
             
             // 创建确认对话框
@@ -500,12 +518,27 @@
             console.log('=== 隐藏确认对话框 ===');
             const confirmDialog = document.querySelector('.confirm-dialog');
             if (confirmDialog) {
+                // 添加淡出动画
                 confirmDialog.classList.remove('show');
+                
+                // 延迟移除对话框，确保动画完成
                 setTimeout(() => {
                     confirmDialog.remove();
-                    // 恢复窗口大小
-                    ipcRenderer.invoke('restore-translator-size');
+                    console.log('确认对话框已移除');
                 }, 300);
+                
+                // 立即恢复翻译按钮显示
+                console.log('=== 恢复翻译按钮显示状态 ===');
+                const translatorContainer = document.querySelector('.translator-container');
+                if (translatorContainer) {
+                    translatorContainer.style.display = 'flex';
+                    translatorContainer.style.visibility = 'visible';
+                    translatorContainer.style.opacity = '1';
+                    console.log('翻译按钮容器显示状态已恢复');
+                }
+                
+                // 恢复窗口大小
+                ipcRenderer.invoke('restore-translator-size');
             }
         }
         
@@ -568,8 +601,16 @@
             }, 10000); // 10秒后自动关闭
         }
         
-        function closeTranslation() {
+        function closeTranslation(event) {
             console.log('=== 关闭翻译结果 ===');
+            
+            // 阻止事件冒泡，避免触发其他点击事件
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                console.log('事件冒泡已阻止');
+            }
+            
             console.log('移除show类...');
             translationPopup.classList.remove('show');
             console.log('延迟隐藏...');
@@ -586,9 +627,21 @@
             }
         }
         
-        // 点击其他地方关闭翻译窗口
+        // 点击其他地方关闭翻译窗口或确认对话框
         document.addEventListener('click', (e) => {
-            if (!translationPopup.contains(e.target) && e.target !== translateBtn && e.target !== closeBtn) {
+            // 检查是否点击了确认对话框外部
+            const confirmDialog = document.querySelector('.confirm-dialog');
+            if (confirmDialog && !confirmDialog.querySelector('.confirm-content').contains(e.target)) {
+                hideConfirmDialog();
+                return;
+            }
+            
+            // 排除翻译结果弹出框内的点击、翻译按钮、主关闭按钮、以及翻译结果弹出框中的关闭按钮
+            if (!translationPopup.contains(e.target) && 
+                e.target !== translateBtn && 
+                e.target !== closeBtn && 
+                !e.target.classList.contains('close-btn') &&
+                !confirmDialog) { // 如果没有确认对话框才关闭翻译结果
                 closeTranslation();
             }
         });
@@ -596,7 +649,19 @@
         // 监听ESC键关闭
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                hideTranslator();
+                // 如果确认对话框正在显示，先关闭它
+                const existingDialog = document.querySelector('.confirm-dialog');
+                if (existingDialog) {
+                    hideConfirmDialog();
+                    return;
+                }
+                
+                // 如果翻译结果弹出框正在显示，先关闭它，而不是显示确认框
+                if (translationPopup.style.display === 'block' || translationPopup.classList.contains('show')) {
+                    closeTranslation();
+                } else {
+                    hideTranslator();
+                }
             }
         });
         

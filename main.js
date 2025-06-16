@@ -457,8 +457,8 @@ app.whenReady().then(() => {
   ipcMain.handle('resize-translator-for-dialog', () => {
     console.log('=== 调整翻译窗口大小以显示对话框 ===');
     if (translatorWindow && !translatorWindow.isDestroyed()) {
-      // 调整窗口大小以容纳对话框
-      translatorWindow.setSize(450, 300);
+      // 调整窗口大小以容纳对话框 - 增加尺寸确保完整显示
+      translatorWindow.setSize(500, 400);
       translatorWindow.center(); // 居中显示
     }
   });
