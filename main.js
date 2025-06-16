@@ -168,7 +168,7 @@ function createTranslatorWindow() {
   
   // 创建翻译按钮窗口
   translatorWindow = new BrowserWindow({
-    width: 120,
+    width: 180, // 增加宽度以容纳更宽的按钮和关闭按钮
     height: 40,
     frame: false, // 无边框
     transparent: true, // 透明
@@ -225,19 +225,26 @@ function createResultWindow() {
   resultWindow = new BrowserWindow({
     width: 320,
     height: 200,
+    minWidth: 280,
+    minHeight: 180,
+    maxWidth: 800,
+    maxHeight: 600,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
-    resizable: false,
-    movable: true,
+    resizable: true, // 启用调整大小
+    movable: true, // 启用系统拖动作为备用
     minimizable: false,
     maximizable: false,
     show: false,
     skipTaskbar: true,
     focusable: true,
+    hasShadow: true,
+    titleBarStyle: 'hidden',
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      enableRemoteModule: true
     }
   });
 
@@ -671,6 +678,44 @@ app.whenReady().then(() => {
     dragLogs = [];
     writeDragLog('拖动日志已清空');
     return true;
+  });
+  
+  // 新增：移动翻译结果窗口
+  ipcMain.handle('move-result-window', (event, deltaX, deltaY) => {
+    console.log('收到移动结果窗口请求:', { deltaX, deltaY });
+    if (resultWindow && !resultWindow.isDestroyed()) {
+      const [currentX, currentY] = resultWindow.getPosition();
+      const newX = currentX + deltaX;
+      const newY = currentY + deltaY;
+      
+      console.log(`当前位置: (${currentX}, ${currentY}), 新位置: (${newX}, ${newY})`);
+      
+      // 直接设置新位置，不限制边界，允许拖动到任意位置
+      resultWindow.setPosition(newX, newY);
+      console.log(`翻译结果窗口移动到: x=${newX}, y=${newY}`);
+    } else {
+      console.log('结果窗口不存在或已销毁');
+    }
+  });
+  
+  // 新增：调整翻译结果窗口大小
+  ipcMain.handle('resize-result-window', (event, newWidth, newHeight) => {
+    if (resultWindow && !resultWindow.isDestroyed()) {
+      // 限制最小和最大尺寸
+      const constrainedWidth = Math.max(280, Math.min(newWidth, 800));
+      const constrainedHeight = Math.max(180, Math.min(newHeight, 600));
+      
+      resultWindow.setSize(constrainedWidth, constrainedHeight);
+    }
+  });
+  
+  // 新增：获取翻译结果窗口大小
+  ipcMain.handle('get-result-window-size', () => {
+    if (resultWindow && !resultWindow.isDestroyed()) {
+      const [width, height] = resultWindow.getSize();
+      return { width, height };
+    }
+    return { width: 320, height: 200 };
   });
   
   console.log('应用初始化完成');
@@ -1342,13 +1387,46 @@ function showTranslationResult(originalText, translationResults) {
           <style>
               body {
                   margin: 0;
-                  padding: 20px;
+                  padding: 0;
                   background: rgba(0, 0, 0, 0.9);
                   color: white;
                   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                   border-radius: 12px;
+                  overflow: hidden;
+                  position: relative;
+                  height: 100vh;
+                  user-select: none;
+              }
+              .drag-handle {
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  right: 40px;
+                  height: 40px;
+                  cursor: move;
+                  background: rgba(255, 255, 255, 0.05);
+                  border-radius: 12px 12px 0 0;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  transition: background 0.2s ease;
+                  z-index: 9998;
+                  -webkit-app-region: drag;
+              }
+              .drag-handle:hover {
+                  background: rgba(255, 255, 255, 0.1);
+              }
+              .drag-handle::before {
+                  content: '⋮⋮';
+                  color: rgba(255, 255, 255, 0.4);
+                  font-size: 16px;
+                  letter-spacing: 2px;
+                  transform: rotate(90deg);
+              }
+              .content {
+                  padding: 50px 20px 20px 20px;
+                  height: calc(100vh - 70px);
                   overflow-y: auto;
-                  max-height: 330px;
               }
               .original {
                   color: #d1d5db;
@@ -1389,50 +1467,233 @@ function showTranslationResult(originalText, translationResults) {
               }
               .close-btn {
                   position: absolute;
-                  top: 10px;
-                  right: 15px;
-                  background: none;
-                  border: none;
-                  color: #9ca3af;
+                  top: 8px;
+                  right: 12px;
+                  background: rgba(255, 255, 255, 0.1);
+                  border: 1px solid rgba(255, 255, 255, 0.2);
+                  color: #ffffff;
                   cursor: pointer;
-                  font-size: 18px;
+                  font-size: 16px;
+                  font-weight: bold;
                   width: 24px;
                   height: 24px;
                   display: flex;
                   align-items: center;
                   justify-content: center;
                   border-radius: 50%;
-                  z-index: 10;
+                  transition: all 0.2s ease;
+                  z-index: 10000;
               }
               .close-btn:hover {
-                  color: white;
+                  color: #ff4757;
+                  background: rgba(255, 71, 87, 0.2);
+                  border-color: rgba(255, 71, 87, 0.4);
+                  transform: scale(1.1);
+              }
+              .close-btn:active {
+                  transform: scale(0.95);
+              }
+              .resize-handle {
+                  position: absolute;
+                  bottom: 0;
+                  right: 0;
+                  width: 20px;
+                  height: 20px;
+                  cursor: nw-resize;
                   background: rgba(255, 255, 255, 0.1);
+                  border-radius: 12px 0 12px 0;
+                  z-index: 9999;
+              }
+              .resize-handle::before {
+                  content: '';
+                  position: absolute;
+                  bottom: 4px;
+                  right: 4px;
+                  width: 0;
+                  height: 0;
+                  border-left: 8px solid transparent;
+                  border-bottom: 8px solid rgba(255, 255, 255, 0.3);
               }
               /* 自定义滚动条 */
-              body::-webkit-scrollbar {
+              .content::-webkit-scrollbar {
                   width: 4px;
               }
-              body::-webkit-scrollbar-track {
+              .content::-webkit-scrollbar-track {
                   background: rgba(255, 255, 255, 0.1);
                   border-radius: 2px;
               }
-              body::-webkit-scrollbar-thumb {
+              .content::-webkit-scrollbar-thumb {
                   background: rgba(255, 255, 255, 0.3);
                   border-radius: 2px;
               }
-              body::-webkit-scrollbar-thumb:hover {
+              .content::-webkit-scrollbar-thumb:hover {
                   background: rgba(255, 255, 255, 0.5);
               }
           </style>
       </head>
       <body>
-          <button class="close-btn" onclick="window.close()">×</button>
-          <div class="original">原文: ${originalText}</div>
-          <div class="translations-container">
-              ${translationsHtml}
+          <div class="drag-handle" id="dragHandle"></div>
+          <button class="close-btn" onclick="closeWindow()">×</button>
+          <div class="resize-handle" id="resizeHandle"></div>
+          <div class="content">
+              <div class="original">原文: ${originalText}</div>
+              <div class="translations-container">
+                  ${translationsHtml}
+              </div>
           </div>
           <script>
-              // 15秒后自动关闭（增加时间以便查看多个结果）
+              const { ipcRenderer } = require('electron');
+              
+              let isDragging = false;
+              let dragOffset = { x: 0, y: 0 };
+              let isResizing = false;
+              let resizeStartSize = { width: 0, height: 0 };
+              let resizeStartMouse = { x: 0, y: 0 };
+              
+              // 拖动功能 - 使用CSS -webkit-app-region: drag 作为主要方案
+              const dragHandle = document.getElementById('dragHandle');
+              
+              console.log('初始化翻译结果窗口拖动功能', dragHandle);
+              
+              if (!dragHandle) {
+                  console.error('拖动手柄元素未找到！');
+              } else {
+                  console.log('拖动手柄已找到，使用CSS拖动方案');
+                  
+                  // 添加测试点击事件
+                  dragHandle.addEventListener('click', (e) => {
+                      console.log('拖动手柄被点击');
+                  });
+                  
+                  // 添加悬停效果
+                  dragHandle.addEventListener('mouseenter', () => {
+                      dragHandle.style.background = 'rgba(255, 255, 255, 0.1)';
+                  });
+                  
+                  dragHandle.addEventListener('mouseleave', () => {
+                      dragHandle.style.background = 'rgba(255, 255, 255, 0.05)';
+                  });
+              }
+              
+              // 备用JavaScript拖动方案
+              dragHandle && dragHandle.addEventListener('mousedown', (e) => {
+                  console.log('JavaScript拖动方案激活', e);
+                  isDragging = true;
+                  dragOffset.x = e.screenX;
+                  dragOffset.y = e.screenY;
+                  dragHandle.style.cursor = 'grabbing';
+                  document.body.style.cursor = 'grabbing';
+                  
+                  // 添加视觉反馈
+                  dragHandle.style.background = 'rgba(255, 255, 255, 0.2)';
+                  
+                  e.preventDefault();
+                  e.stopPropagation();
+                  
+                  console.log('拖动状态设置完成，isDragging:', isDragging);
+              });
+              
+              document.addEventListener('mousemove', (e) => {
+                  if (isDragging) {
+                      const deltaX = e.screenX - dragOffset.x;
+                      const deltaY = e.screenY - dragOffset.y;
+                      
+                      console.log('拖动中:', { deltaX, deltaY, screenX: e.screenX, screenY: e.screenY });
+                      
+                      // 使用异步调用，不等待返回
+                      ipcRenderer.invoke('move-result-window', deltaX, deltaY).catch(err => {
+                          console.error('移动窗口失败:', err);
+                      });
+                      
+                      dragOffset.x = e.screenX;
+                      dragOffset.y = e.screenY;
+                  }
+                  
+                  if (isResizing) {
+                      const deltaX = e.screenX - resizeStartMouse.x;
+                      const deltaY = e.screenY - resizeStartMouse.y;
+                      
+                      const newWidth = Math.max(280, resizeStartSize.width + deltaX);
+                      const newHeight = Math.max(180, resizeStartSize.height + deltaY);
+                      
+                      ipcRenderer.invoke('resize-result-window', newWidth, newHeight).catch(err => {
+                          console.error('调整窗口大小失败:', err);
+                      });
+                  }
+              });
+              
+              document.addEventListener('mouseup', (e) => {
+                  if (isDragging) {
+                      console.log('结束拖动翻译结果窗口');
+                      isDragging = false;
+                      dragHandle.style.cursor = 'move';
+                      document.body.style.cursor = '';
+                      // 恢复拖动手柄样式
+                      dragHandle.style.background = 'rgba(255, 255, 255, 0.05)';
+                  }
+                  if (isResizing) {
+                      isResizing = false;
+                  }
+              });
+              
+              // 全局鼠标释放事件（防止鼠标移出窗口时丢失事件）
+              window.addEventListener('mouseup', (e) => {
+                  if (isDragging) {
+                      console.log('全局鼠标释放 - 结束拖动');
+                      isDragging = false;
+                      dragHandle.style.cursor = 'move';
+                      document.body.style.cursor = '';
+                      dragHandle.style.background = 'rgba(255, 255, 255, 0.05)';
+                  }
+                  if (isResizing) {
+                      isResizing = false;
+                  }
+              });
+              
+              // 防止拖拽时选中文本
+              document.addEventListener('selectstart', (e) => {
+                  if (isDragging || isResizing) {
+                      e.preventDefault();
+                  }
+              });
+              
+              // 备用拖动方案：使用整个窗口顶部区域作为拖动区域
+              document.body.addEventListener('mousedown', (e) => {
+                  // 只有在点击顶部40px区域且不是关闭按钮时才启用拖动
+                  if (e.clientY <= 40 && !e.target.classList.contains('close-btn') && !isDragging) {
+                      console.log('备用拖动方案激活');
+                      isDragging = true;
+                      dragOffset.x = e.screenX;
+                      dragOffset.y = e.screenY;
+                      document.body.style.cursor = 'grabbing';
+                      e.preventDefault();
+                      e.stopPropagation();
+                  }
+              });
+              
+              // 调整大小功能
+              const resizeHandle = document.getElementById('resizeHandle');
+              
+              resizeHandle.addEventListener('mousedown', (e) => {
+                  isResizing = true;
+                  resizeStartMouse.x = e.screenX;
+                  resizeStartMouse.y = e.screenY;
+                  
+                  // 获取当前窗口大小
+                  ipcRenderer.invoke('get-result-window-size').then(size => {
+                      resizeStartSize = size;
+                  });
+                  
+                  e.preventDefault();
+                  e.stopPropagation();
+              });
+              
+              // 关闭窗口
+              function closeWindow() {
+                  window.close();
+              }
+              
+              // 15秒后自动关闭
               setTimeout(() => {
                   window.close();
               }, 15000);
@@ -1462,7 +1723,7 @@ function showTranslationResult(originalText, translationResults) {
           resultWin.close();
           console.log('翻译结果窗口已自动关闭');
         }
-      }, 15000);
+      }, 30000);
     });
     
     // 处理加载错误

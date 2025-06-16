@@ -20,6 +20,7 @@
             padding: 8px; /* 增加内边距，便于拖动 */
             cursor: move; /* 显示拖动光标 */
             user-select: none; /* 防止选中文本 */
+            min-width: 170px; /* 确保容器足够宽 */
         }
         
         .drag-handle {
@@ -45,7 +46,7 @@
         }
         
         .translator-button {
-            width: 110px;
+            width: 130px;
             height: 36px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border: none;
@@ -63,6 +64,7 @@
             overflow: hidden;
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.2);
+            white-space: nowrap;
         }
         
         .translator-button:hover {
@@ -144,8 +146,12 @@
             position: absolute;
             top: 45px;
             left: 0;
-            width: 280px;
-            max-height: 180px;
+            width: 320px;
+            min-width: 280px;
+            max-width: 600px;
+            height: 300px;
+            min-height: 180px;
+            max-height: 500px;
             background: rgba(0, 0, 0, 0.92);
             color: white;
             padding: 16px;
@@ -158,8 +164,10 @@
             z-index: 9999;
             backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            visibility: visible;
-            opacity: 1;
+            visibility: hidden;
+            opacity: 0;
+            resize: both;
+            overflow: auto;
         }
         
         .translation-popup.show {
@@ -178,6 +186,34 @@
                 opacity: 1; 
                 transform: translateY(0) scale(1); 
             }
+        }
+        
+        .popup-drag-handle {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 40px;
+            height: 40px;
+            cursor: move;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px 12px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s ease;
+            z-index: 9998;
+        }
+        
+        .popup-drag-handle:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .popup-drag-handle::before {
+            content: '⋮⋮';
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 16px;
+            letter-spacing: 2px;
+            transform: rotate(90deg);
         }
         
         .close-btn {
@@ -214,6 +250,8 @@
         
         .translation-content {
             margin-right: 20px;
+            margin-top: 40px;
+            padding-top: 8px;
         }
         
         .original-text {
@@ -406,6 +444,7 @@
     </div>
     
     <div class="translation-popup" id="translationPopup">
+        <div class="popup-drag-handle" id="popupDragHandle"></div>
         <button class="close-btn" onclick="closeTranslation(event)" title="关闭">✕</button>
         <div class="translation-content" id="translationContent"></div>
     </div>
@@ -472,13 +511,39 @@
             }
         }
 
-        // 翻译按钮点击事件
+        // 翻译按钮点击事件 - 使用更严格的拖动检测
+        let clickStartTime = 0;
+        let clickStartPosition = { x: 0, y: 0 };
+        let wasRecentlyDragged = false;
+        
+        translateBtn.addEventListener('mousedown', (e) => {
+            clickStartTime = Date.now();
+            clickStartPosition.x = e.screenX;
+            clickStartPosition.y = e.screenY;
+            wasRecentlyDragged = false;
+        });
+        
         translateBtn.addEventListener('click', async (e) => {
             console.log('=== 翻译按钮被点击 ===');
             
             // 如果正在拖动，则不处理点击事件
-            if (isDragging) {
-                console.log('正在拖动，忽略点击事件');
+            if (isDragging || wasRecentlyDragged) {
+                console.log('正在拖动或刚刚拖动过，忽略点击事件');
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            
+            // 检查是否为真正的点击（而不是拖动后的释放）
+            const clickDuration = Date.now() - clickStartTime;
+            const clickDistance = Math.sqrt(
+                Math.pow(e.screenX - clickStartPosition.x, 2) + 
+                Math.pow(e.screenY - clickStartPosition.y, 2)
+            );
+            
+            // 如果点击时间太长或移动距离太大，认为是拖动
+            if (clickDuration > 500 || clickDistance > 5) {
+                console.log('检测到拖动行为，忽略点击事件', { clickDuration, clickDistance });
                 e.preventDefault();
                 e.stopPropagation();
                 return;
@@ -488,13 +553,37 @@
             await handleTranslateClick();
         });
         
-        // 关闭按钮点击事件
+        // 关闭按钮点击事件 - 使用相同的拖动检测逻辑
+        let closeClickStartTime = 0;
+        let closeClickStartPosition = { x: 0, y: 0 };
+        
+        closeBtn.addEventListener('mousedown', (e) => {
+            closeClickStartTime = Date.now();
+            closeClickStartPosition.x = e.screenX;
+            closeClickStartPosition.y = e.screenY;
+        });
+        
         closeBtn.addEventListener('click', (e) => {
             console.log('=== 关闭按钮被点击 ===');
             
             // 如果正在拖动，则不处理点击事件
-            if (isDragging) {
-                console.log('正在拖动，忽略关闭点击事件');
+            if (isDragging || wasRecentlyDragged) {
+                console.log('正在拖动或刚刚拖动过，忽略关闭点击事件');
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            
+            // 检查是否为真正的点击
+            const clickDuration = Date.now() - closeClickStartTime;
+            const clickDistance = Math.sqrt(
+                Math.pow(e.screenX - closeClickStartPosition.x, 2) + 
+                Math.pow(e.screenY - closeClickStartPosition.y, 2)
+            );
+            
+            // 如果点击时间太长或移动距离太大，认为是拖动
+            if (clickDuration > 500 || clickDistance > 5) {
+                console.log('检测到拖动行为，忽略关闭点击事件', { clickDuration, clickDistance });
                 e.preventDefault();
                 e.stopPropagation();
                 return;
@@ -599,9 +688,9 @@
             
             // 检查是否为数组（多个翻译服务结果）
             if (Array.isArray(translationResults)) {
-                // 调整弹出框大小以适应多个结果
-                translationPopup.style.width = '400px';
-                translationPopup.style.maxHeight = '300px';
+                // 不再强制设置尺寸，让CSS控制
+                // translationPopup.style.width = '400px';
+                // translationPopup.style.maxHeight = '300px';
                 
                 content += '<div class="translations-container">';
                 translationResults.forEach((result, index) => {
@@ -629,16 +718,18 @@
             translationContent.innerHTML = content;
             console.log('内容已设置到DOM');
             
-            // 强制显示翻译框
-            console.log('强制显示翻译框...');
-            translationPopup.style.display = 'block';
-            translationPopup.style.visibility = 'visible';
-            translationPopup.style.opacity = '1';
-            translationPopup.style.zIndex = '9999';
+            // 显示翻译框 - 使用CSS类而不是内联样式
+            console.log('显示翻译框...');
             
             // 移除可能影响显示的类
             translationPopup.classList.remove('hide');
             translationPopup.classList.add('show');
+            
+            // 确保拖动功能已初始化
+            if (!window.popupDragInitialized) {
+                initPopupDragFunctionality();
+                window.popupDragInitialized = true;
+            }
             
             console.log('翻译框样式已设置');
             
@@ -692,7 +783,7 @@
             console.log('延迟隐藏...');
             // 延迟隐藏，确保动画完成
             setTimeout(() => {
-                translationPopup.style.display = 'none';
+                // 不使用内联样式，让CSS控制显示/隐藏
                 console.log('翻译框已隐藏');
             }, 400);
             
@@ -850,27 +941,21 @@
                     sendDragLog(`结束拖动, hasMoved=${hasMoved}`);
                     console.log('结束拖动, hasMoved:', hasMoved);
                     
-                    // 只有在没有移动的情况下才触发点击事件
-                    if (!hasMoved) {
-                        // 检查点击的是哪个按钮
-                        if (e.target === translateBtn || e.target.closest('#translateBtn')) {
-                            sendDragLog('检测到点击翻译按钮（无拖动）');
-                            console.log('检测到点击翻译按钮（无拖动）');
-                            // 延迟一点触发点击，确保拖动状态已清除
-                            setTimeout(() => {
-                                // 手动触发翻译功能，而不是click事件
-                                handleTranslateClick();
-                            }, 10);
-                        } else if (e.target === closeBtn || e.target.closest('#closeBtn')) {
-                            sendDragLog('检测到点击关闭按钮（无拖动）');
-                            console.log('检测到点击关闭按钮（无拖动）');
-                            setTimeout(() => {
-                                hideTranslator();
-                            }, 10);
-                        }
+                    // 如果发生了拖动，设置标志防止触发点击事件
+                    if (hasMoved) {
+                        wasRecentlyDragged = true;
+                        sendDragLog('拖动后释放，设置wasRecentlyDragged标志');
+                        console.log('拖动后释放，设置wasRecentlyDragged标志');
+                        
+                        // 500ms后清除标志
+                        setTimeout(() => {
+                            wasRecentlyDragged = false;
+                            sendDragLog('清除wasRecentlyDragged标志');
+                        }, 500);
                     } else {
-                        sendDragLog('拖动后释放，不触发点击事件');
-                        console.log('拖动后释放，不触发点击事件');
+                        // 没有移动，可能是点击
+                        sendDragLog('没有检测到拖动移动');
+                        console.log('没有检测到拖动移动');
                     }
                     
                     isDragging = false;
@@ -897,6 +982,90 @@
         
         // 初始化拖动功能
         initDragFunctionality();
+        
+        // 翻译弹窗拖动功能将在显示翻译结果时初始化
+        
+        // 翻译弹窗拖动功能实现
+        function initPopupDragFunctionality() {
+            const popupDragHandle = document.getElementById('popupDragHandle');
+            const translationPopup = document.getElementById('translationPopup');
+            
+            if (!popupDragHandle || !translationPopup) {
+                console.error('拖动元素未找到:', { popupDragHandle, translationPopup });
+                return;
+            }
+            
+            let isPopupDragging = false;
+            let popupDragOffset = { x: 0, y: 0 };
+            let popupStartPosition = { x: 0, y: 0 };
+            
+            console.log('=== 初始化翻译弹窗拖动功能 ===', { popupDragHandle, translationPopup });
+            
+            // 鼠标按下事件 - 在拖动手柄上监听
+            popupDragHandle.addEventListener('mousedown', (e) => {
+                console.log('翻译弹窗拖动开始');
+                isPopupDragging = true;
+                
+                // 获取弹窗当前位置
+                const rect = translationPopup.getBoundingClientRect();
+                popupStartPosition.x = rect.left;
+                popupStartPosition.y = rect.top;
+                
+                // 记录鼠标相对于弹窗的偏移
+                popupDragOffset.x = e.clientX - rect.left;
+                popupDragOffset.y = e.clientY - rect.top;
+                
+                // 添加拖动样式
+                translationPopup.style.cursor = 'grabbing';
+                popupDragHandle.style.cursor = 'grabbing';
+                
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            
+            // 鼠标移动事件
+            document.addEventListener('mousemove', (e) => {
+                if (!isPopupDragging) return;
+                
+                // 计算新位置
+                const newX = e.clientX - popupDragOffset.x;
+                const newY = e.clientY - popupDragOffset.y;
+                
+                // 获取视窗尺寸
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                const popupRect = translationPopup.getBoundingClientRect();
+                
+                // 限制在视窗范围内
+                const constrainedX = Math.max(0, Math.min(newX, viewportWidth - popupRect.width));
+                const constrainedY = Math.max(0, Math.min(newY, viewportHeight - popupRect.height));
+                
+                // 设置新位置
+                translationPopup.style.left = constrainedX + 'px';
+                translationPopup.style.top = constrainedY + 'px';
+                
+                console.log('翻译弹窗移动到:', constrainedX, constrainedY);
+            });
+            
+            // 鼠标释放事件
+            document.addEventListener('mouseup', (e) => {
+                if (isPopupDragging) {
+                    console.log('翻译弹窗拖动结束');
+                    isPopupDragging = false;
+                    
+                    // 恢复光标样式
+                    translationPopup.style.cursor = '';
+                    popupDragHandle.style.cursor = 'move';
+                }
+            });
+            
+            // 防止拖拽时选中文本
+            popupDragHandle.addEventListener('selectstart', (e) => {
+                e.preventDefault();
+            });
+            
+            console.log('翻译弹窗拖动功能初始化完成');
+        }
     </script>
 </body>
 </html>

@@ -5,7 +5,7 @@ module.exports = {
     'google',      // Google 翻译（免费，无需密钥）
     'amazon',      // 亚马逊翻译（免费，无需密钥）
     'baidu',       // 百度翻译（免费额度，需要API密钥）
-    'deepl_free'   // DeepL API Free（需要免费API密钥）
+    // 'deepl_free'   // DeepL API Free（需要免费API密钥）
   ],
   
   // 付费翻译服务（作为备用）
