@@ -6,6 +6,9 @@ const config = require('./config');
 // 设置日志文件
 const logFile = path.join(app.getPath('userData'), 'app.log');
 
+// 禁用开发者工具的错误信息
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+
 function writeLog(message) {
   const timestamp = new Date().toISOString();
   const logMessage = `[${timestamp}] ${message}\n`;
@@ -23,6 +26,8 @@ function writeLog(message) {
 let mainWindow;
 let translatorWindow;
 let resultWindow; // 新增：翻译结果窗口
+let lastClipboardText = ''; // 新增：记录上次剪贴板内容
+let isTranslating = false; // 新增：翻译状态标志
 
 function createMainWindow() {
   writeLog('=== 创建主窗口 ===');
@@ -34,7 +39,8 @@ function createMainWindow() {
     show: true, // 改为显示
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      devTools: true
     },
     title: 'More Translator - 调试模式'
   });
@@ -51,8 +57,18 @@ function createMainWindow() {
     mainWindow = null;
   });
   
-  // 打开开发者工具用于调试
+  // 打开开发者工具用于调试，但禁用一些错误信息
   mainWindow.webContents.openDevTools();
+  
+  // 禁用一些开发者工具的警告
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    // 过滤掉一些不必要的错误信息
+    if (message.includes('Unknown VE context') || 
+        message.includes('Autofill.enable') || 
+        message.includes('Autofill.setAddresses')) {
+      return; // 不输出这些错误
+    }
+  });
   
   writeLog('主窗口创建完成');
 }
@@ -106,14 +122,12 @@ function createTranslatorWindow() {
 function createResultWindow() {
   console.log('=== 创建翻译结果窗口 ===');
   
-  // 检查现有窗口是否有效
+  // 检查现有窗口是否有效，如果有效则关闭
   if (resultWindow && !resultWindow.isDestroyed()) {
     console.log('关闭现有结果窗口');
     resultWindow.close();
+    resultWindow = null;
   }
-  
-  // 重置 resultWindow 变量
-  resultWindow = null;
   
   // 创建翻译结果窗口
   resultWindow = new BrowserWindow({
@@ -141,6 +155,12 @@ function createResultWindow() {
   resultWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   resultWindow.setAlwaysOnTop(true, 'screen-saver');
   
+  // 监听窗口关闭事件
+  resultWindow.on('closed', () => {
+    console.log('翻译结果窗口已关闭');
+    resultWindow = null;
+  });
+  
   return resultWindow;
 }
 
@@ -148,7 +168,7 @@ function showTranslatorButton(x, y) {
   console.log('=== 显示翻译按钮 ===');
   console.log('位置:', { x, y });
   
-  if (translatorWindow) {
+  if (translatorWindow && !isTranslating) {
     // 调整位置，确保按钮在合适的位置显示
     translatorWindow.setPosition(x + 10, y - 50);
     translatorWindow.show();
@@ -158,13 +178,13 @@ function showTranslatorButton(x, y) {
     
     // 自动隐藏
     setTimeout(() => {
-      if (translatorWindow && translatorWindow.isVisible()) {
+      if (translatorWindow && translatorWindow.isVisible() && !isTranslating) {
         translatorWindow.hide();
         console.log('翻译按钮窗口已自动隐藏');
       }
     }, config.window.translatorButtonTimeout);
   } else {
-    console.error('翻译按钮窗口未创建');
+    console.error('翻译按钮窗口未创建或正在翻译中');
   }
 }
 
@@ -220,6 +240,12 @@ app.whenReady().then(() => {
     globalShortcut.register(config.shortcuts.translate, () => {
       console.log('=== 快捷键被触发 ===');
       
+      // 如果正在翻译中，忽略新的快捷键
+      if (isTranslating) {
+        console.log('正在翻译中，忽略新的快捷键');
+        return;
+      }
+      
       // 模拟 CMD+C 来确保剪贴板更新
       const { exec } = require('child_process');
       exec('osascript -e \'tell application "System Events" to keystroke "c" using command down\'', (error) => {
@@ -231,9 +257,12 @@ app.whenReady().then(() => {
         setTimeout(() => {
           const selectedText = clipboard.readText();
           console.log('剪贴板内容:', selectedText);
+          console.log('上次剪贴板内容:', lastClipboardText);
           
-          if (selectedText && selectedText.trim().length > 0) {
-            console.log('检测到文本，长度:', selectedText.trim().length);
+          // 检查剪贴板内容是否发生变化
+          if (selectedText && selectedText.trim().length > 0 && selectedText !== lastClipboardText) {
+            lastClipboardText = selectedText; // 更新记录
+            console.log('检测到新的文本，长度:', selectedText.trim().length);
             
             // 检查是否为英文文本
             if (/^[a-zA-Z\s.,!?;:'"()-]+$/.test(selectedText.trim())) {
@@ -245,9 +274,9 @@ app.whenReady().then(() => {
               console.log('文本不符合英文格式，跳过');
             }
           } else {
-            console.log('剪贴板为空或无效');
+            console.log('剪贴板为空、无效或内容未变化');
           }
-        }, 200); // 增加延迟时间
+        }, 300); // 增加延迟时间确保剪贴板更新
       });
     });
     
@@ -262,6 +291,9 @@ app.whenReady().then(() => {
     console.log('=== 收到翻译请求 ===');
     console.log('要翻译的文本:', text);
     
+    // 设置翻译状态
+    isTranslating = true;
+    
     try {
       const translation = await translateText(text);
       console.log('翻译结果:', translation);
@@ -275,6 +307,9 @@ app.whenReady().then(() => {
       const errorMsg = '翻译失败';
       showTranslationResult(text, errorMsg);
       return errorMsg;
+    } finally {
+      // 重置翻译状态
+      isTranslating = false;
     }
   });
 
@@ -284,10 +319,65 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('get-selected-text', () => {
-    const text = clipboard.readText();
     console.log('=== 获取选中文本 ===');
-    console.log('剪贴板文本:', text);
-    return text;
+    
+    // 尝试使用AppleScript获取当前选中的文本
+    const { exec } = require('child_process');
+    
+    return new Promise((resolve) => {
+      // 使用AppleScript获取当前选中的文本
+      const script = `
+        tell application "System Events"
+          set frontApp to name of first application process whose frontmost is true
+        end tell
+        
+        tell application frontApp
+          activate
+        end tell
+        
+        tell application "System Events"
+          tell process frontApp
+            set selectedText to ""
+            try
+              set selectedText to value of attribute "AXSelectedText" of window 1
+            on error
+              try
+                set selectedText to value of attribute "AXSelectedText" of text area 1 of window 1
+              on error
+                try
+                  set selectedText to value of attribute "AXSelectedText" of text field 1 of window 1
+                on error
+                  set selectedText to ""
+                end try
+              end try
+            end try
+            return selectedText
+          end tell
+        end tell
+      `;
+      
+      exec(`osascript -e '${script}'`, (error, stdout, stderr) => {
+        if (error) {
+          console.log('AppleScript获取选中文本失败:', error.message);
+          // 如果AppleScript失败，回退到剪贴板
+          const clipboardText = clipboard.readText();
+          console.log('回退到剪贴板文本:', clipboardText);
+          resolve(clipboardText);
+        } else {
+          const selectedText = stdout.trim();
+          console.log('AppleScript获取的选中文本:', selectedText);
+          
+          if (selectedText && selectedText.length > 0) {
+            resolve(selectedText);
+          } else {
+            // 如果AppleScript返回空，回退到剪贴板
+            const clipboardText = clipboard.readText();
+            console.log('AppleScript返回空，回退到剪贴板文本:', clipboardText);
+            resolve(clipboardText);
+          }
+        }
+      });
+    });
   });
 
   ipcMain.handle('check-permission', () => {
@@ -306,6 +396,11 @@ app.whenReady().then(() => {
       translatorWindow.focus();
       console.log('翻译窗口已带到前面');
     }
+  });
+  
+  // 新增：获取翻译状态
+  ipcMain.handle('get-translation-status', () => {
+    return isTranslating;
   });
   
   console.log('应用初始化完成');
@@ -492,91 +587,111 @@ function showTranslationResult(originalText, translatedText) {
   console.log('原文:', originalText);
   console.log('译文:', translatedText);
   
-  const resultWin = createResultWindow();
-  
-  // 创建简单的HTML内容
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>翻译结果</title>
-        <style>
-            body {
-                margin: 0;
-                padding: 20px;
-                background: rgba(0, 0, 0, 0.9);
-                color: white;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                border-radius: 12px;
-                overflow: hidden;
-            }
-            .original {
-                color: #d1d5db;
-                font-size: 12px;
-                margin-bottom: 10px;
-                padding-bottom: 10px;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-            }
-            .translation {
-                color: #ffffff;
-                font-size: 14px;
-                line-height: 1.5;
-            }
-            .close-btn {
-                position: absolute;
-                top: 10px;
-                right: 15px;
-                background: none;
-                border: none;
-                color: #9ca3af;
-                cursor: pointer;
-                font-size: 18px;
-                width: 24px;
-                height: 24px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border-radius: 50%;
-            }
-            .close-btn:hover {
-                color: white;
-                background: rgba(255, 255, 255, 0.1);
-            }
-        </style>
-    </head>
-    <body>
-        <button class="close-btn" onclick="window.close()">×</button>
-        <div class="original">原文: ${originalText}</div>
-        <div class="translation">译文: ${translatedText}</div>
-        <script>
-            // 10秒后自动关闭
-            setTimeout(() => {
-                window.close();
-            }, 10000);
-        </script>
-    </body>
-    </html>
-  `;
-  
-  // 加载HTML内容
-  resultWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
-  
-  // 获取鼠标位置并显示窗口
-  const { x, y } = screen.getCursorScreenPoint();
-  resultWin.setPosition(x + 20, y - 100);
-  resultWin.show();
-  resultWin.focus();
-  
-  console.log('翻译结果窗口已显示');
-  
-  // 10秒后自动关闭
-  setTimeout(() => {
-    if (resultWin && !resultWin.isDestroyed()) {
-      resultWin.close();
-      console.log('翻译结果窗口已自动关闭');
+  try {
+    const resultWin = createResultWindow();
+    
+    if (!resultWin) {
+      console.error('无法创建翻译结果窗口');
+      return;
     }
-  }, 10000);
+    
+    // 创建简单的HTML内容
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <meta charset="UTF-8">
+          <title>翻译结果</title>
+          <style>
+              body {
+                  margin: 0;
+                  padding: 20px;
+                  background: rgba(0, 0, 0, 0.9);
+                  color: white;
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                  border-radius: 12px;
+                  overflow: hidden;
+              }
+              .original {
+                  color: #d1d5db;
+                  font-size: 12px;
+                  margin-bottom: 10px;
+                  padding-bottom: 10px;
+                  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+              }
+              .translation {
+                  color: #ffffff;
+                  font-size: 14px;
+                  line-height: 1.5;
+              }
+              .close-btn {
+                  position: absolute;
+                  top: 10px;
+                  right: 15px;
+                  background: none;
+                  border: none;
+                  color: #9ca3af;
+                  cursor: pointer;
+                  font-size: 18px;
+                  width: 24px;
+                  height: 24px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  border-radius: 50%;
+              }
+              .close-btn:hover {
+                  color: white;
+                  background: rgba(255, 255, 255, 0.1);
+              }
+          </style>
+      </head>
+      <body>
+          <button class="close-btn" onclick="window.close()">×</button>
+          <div class="original">原文: ${originalText}</div>
+          <div class="translation">译文: ${translatedText}</div>
+          <script>
+              // 10秒后自动关闭
+              setTimeout(() => {
+                  window.close();
+              }, 10000);
+          </script>
+      </body>
+      </html>
+    `;
+    
+    // 加载HTML内容
+    resultWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
+    
+    // 等待页面加载完成后显示窗口
+    resultWin.webContents.on('did-finish-load', () => {
+      console.log('翻译结果页面加载完成');
+      
+      // 获取鼠标位置并显示窗口
+      const { x, y } = screen.getCursorScreenPoint();
+      resultWin.setPosition(x + 20, y - 100);
+      resultWin.show();
+      resultWin.focus();
+      
+      console.log('翻译结果窗口已显示');
+      
+      // 10秒后自动关闭
+      setTimeout(() => {
+        if (resultWin && !resultWin.isDestroyed()) {
+          resultWin.close();
+          console.log('翻译结果窗口已自动关闭');
+        }
+      }, 10000);
+    });
+    
+    // 处理加载错误
+    resultWin.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+      console.error('翻译结果页面加载失败:', errorCode, errorDescription);
+    });
+    
+  } catch (error) {
+    console.error('显示翻译结果时发生错误:', error);
+  }
 }
 
 app.on('window-all-closed', () => {
@@ -597,15 +712,22 @@ app.on('will-quit', () => {
   // 注销所有快捷键
   globalShortcut.unregisterAll();
   
+  // 重置状态
+  isTranslating = false;
+  lastClipboardText = '';
+  
   // 关闭所有窗口
   if (resultWindow && !resultWindow.isDestroyed()) {
     resultWindow.close();
+    resultWindow = null;
   }
   if (translatorWindow && !translatorWindow.isDestroyed()) {
     translatorWindow.close();
+    translatorWindow = null;
   }
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.close();
+    mainWindow = null;
   }
 });
 
